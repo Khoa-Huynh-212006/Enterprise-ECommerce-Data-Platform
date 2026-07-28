@@ -10,54 +10,59 @@ Tài liệu này cung cấp bức tranh toàn cảnh về các năng lực (Capa
 
 ## 2. Sơ đồ Kiến trúc (Enterprise Overview)
 
-Sơ đồ dưới đây mô tả kiến trúc theo hướng phân lớp (Layered Architecture). Toàn bộ hệ thống được đặt dưới sự kiểm soát của một lớp Điều phối & Giám sát chung.
+Sơ đồ dưới đây mô tả kiến trúc theo hướng phân lớp (Layered Architecture). Toàn bộ hệ thống Nền tảng dữ liệu được đặt dưới sự kiểm soát của một lớp Điều phối & Giám sát (Workflow Orchestration & Monitoring).
 
-```mermaid
-flowchart TD
-    %% Định nghĩa các node bên ngoài Data Platform
-    subgraph Sources [1. Source Systems]
-        direction LR
-        DB[(Operational DB)]
-        API((External APIs))
-        FILE[File-based Systems]
-    end
-
-    subgraph Consumption [3. Data Consumption]
-        direction LR
-        BI[Dashboards / BI Reports]
-        USERS((Business Users))
-    end
-
-    %% Định nghĩa Data Platform
-    subgraph DataPlatform [2. Data Platform Capabilities]
-        direction TB
-        INGEST[Data Ingestion Layer]
-        LAKE[(Data Lake Layer <br> Bronze / Silver)]
-        PROCESS((Data Processing Layer))
-        DWH[(Data Warehouse Layer)]
-        MARTS[(Data Marts Layer <br> Sales / Finance / Logistics)]
-        
-        INGEST --> LAKE
-        LAKE --> PROCESS
-        PROCESS --> DWH
-        DWH --> MARTS
-    end
-
-    %% Workflow Orchestration bao bọc toàn bộ Data Platform
-    subgraph Orchestration [Workflow Orchestration & Monitoring]
-        DataPlatform
-    end
-
-    %% Luồng di chuyển tổng thể
-    Sources ==>|Trích xuất| INGEST
-    MARTS ==>|Phục vụ| BI
-    BI --- USERS
-
-    %% Styling
-    style Orchestration fill:none,stroke:#d3d3d3,stroke-width:2px,stroke-dasharray: 5 5
-    style DataPlatform fill:#f9f9f9,stroke:#333,stroke-width:1px
+```text
+================================================================================
+                    WORKFLOW ORCHESTRATION & MONITORING
+                    (Điều phối, lên lịch và giám sát toàn hệ thống)
+================================================================================
+                                      |
+                                      | Quản lý vòng đời
+                                      V
++-----------------------+      +-----------------------------------------------+
+|                       |      |  NỀN TẢNG DỮ LIỆU (DATA PLATFORM)             |
+|  NGUỒN DỮ LIỆU        |      |                                               |
+|  (Source Systems)     |      |  +-----------------------------------------+  |
+|                       |      |  | [A] Data Ingestion Layer                |  |
+|  - Operational DB     |======|=>|     (Cổng thu thập & Trung chuyển)      |  |
+|  - External APIs      | Trích|  +-----------------------------------------+  |
+|  - File-based Systems | xuất |                       |                       |
+|                       |      |                       V                       |
++-----------------------+      |  +-----------------------------------------+  |
+                               |  | [B] Data Lake Layer                     |  |
+                               |  |     (Lưu trữ thô - Bronze / Silver)     |  |
+                               |  +-----------------------------------------+  |
+                               |                       |                       |
+                               |                       V                       |
+                               |  +-----------------------------------------+  |
+                               |  | [C] Data Processing Layer               |  |
+                               |  |     (Động cơ Xử lý & Làm sạch)          |  |
+                               |  +-----------------------------------------+  |
+                               |                       |                       |
+                               |                       V                       |
+                               |  +-----------------------------------------+  |
+                               |  | [D] Data Warehouse Layer                |  |
+                               |  |     (Kho dữ liệu cốt lõi chuẩn hóa)     |  |
+                               |  +-----------------------------------------+  |
+                               |                       |                       |
+                               |                       V                       |
+                               |  +-----------------------------------------+  |
+                               |  | [E] Data Marts Layer                    |  |
+                               |  |     (Sales / Finance / Logistics)       |  |
+                               |  +-----------------------------------------+  |
+                               |                                               |
+                               +-----------------------------------------------+
+                                                      |
+                                                      | Phục vụ phân tích
+                                                      V
+                               +-----------------------------------------------+
+                               |  KHAI THÁC & ỨNG DỤNG (Data Consumption)      |
+                               |                                               |
+                               |  - Dashboards & BI Reports                    |
+                               |  - Business Users (CEO, Managers)             |
+                               +-----------------------------------------------+
 ```
-
 ## 3. Vai trò của các Phân lớp (Layer Capabilities)
 Thay vì nhìn Data Platform như một chiếc hộp đen, hệ thống được bóc tách thành các lớp với một trách nhiệm duy nhất (Single Responsibility):
 
