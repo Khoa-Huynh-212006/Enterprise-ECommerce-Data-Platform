@@ -9,6 +9,7 @@
 Dự án này xây dựng một Data Platform toàn diện cho FastOrder – một nền tảng thương mại điện tử mô hình Marketplace B2C. Hệ thống đảm nhiệm việc thu thập, lưu trữ, xử lý và chuyển đổi khối lượng dữ liệu lớn (khoảng 50.000 đơn hàng/ngày) từ nhiều nguồn khác nhau thành các Data Mart sẵn sàng cho phân tích.
 
 Bằng cách áp dụng các luồng dữ liệu tự động (Data Pipelines) và chuẩn hóa theo kiến trúc Medallion (Bronze - Silver - Gold), nền tảng cung cấp cho ban lãnh đạo và các phòng ban (Sales, Logistics, Inventory, Marketing...) một nguồn sự thật duy nhất (Single Source of Truth) để đưa ra các quyết định kinh doanh dựa trên dữ liệu.
+
 ---
 
 # 3. Bối cảnh nghiệp vụ
