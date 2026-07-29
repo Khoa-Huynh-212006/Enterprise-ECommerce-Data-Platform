@@ -284,6 +284,19 @@ order_reviews
 
 ---
 
+## Mốc 10 — Post-load validation
+
+### 30/07/2026
+**Đã thực hiện**
+- Post-load row-count reconciliation hoàn tất.
+- Khẳng định foreign-key integrity validation hoàn tất.
+- Hoàn thành Required NULL validation (kiểm tra 17 trường bắt buộc không có NULL).
+- Quyết định dừng validation ở tầng cấu trúc vật lý, không thực hiện timestamp consistency validation tại file này.
+
+**Kết quả**
+- Chốt mốc Post-load validation hoàn tất. Toàn bộ 9/9 bảng khớp dòng, 6/6 quan hệ không orphan, 17/17 cột bắt buộc tuân thủ constraint.
+---
+
 ## Trạng thái chốt ngày 29/07/2026
 
 ```text

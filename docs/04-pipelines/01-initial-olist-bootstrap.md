@@ -105,6 +105,9 @@ Composite key dựa trên ZIP/latitude/longitude không phải khóa nghiệp v�
 
 ## Post-load Reconciliation
 
-- Bootstrap pipeline chạy một lần 3] đã được kiểm chứng (validation) toàn vẹn dữ liệu.
-- Quá trình đối chiếu (reconciliation) đối với toàn bộ 9 bảng cho kết quả trùng khớp hoàn toàn.
-- Số lượng dòng (row-count) từ file CSV được xác nhận đã chuyển chính xác 100% vào FastOrder PostgreSQL thông qua SQLAlchemy transaction.
+- Đã thực hiện kiểm tra số lượng dòng sau khi tải dữ liệu.
+- Ghi nhận 9 bảng có row count khớp hoàn toàn với các file CSV nguồn.
+- Foreign-key integrity validation thành công: 0 orphan records trong toàn bộ 6 quan hệ được kiểm tra.
+- Required NULL validation thành công: 17/17 trường dữ liệu bắt buộc tuân thủ đúng contract.
+
+> **Lưu ý Kiến trúc:** Quá trình validation tại bước này chỉ tập trung vào **Ingestion Fidelity** (dữ liệu vào khớp dữ liệu nguồn) và **Structural Integrity** (Schema, PK, FK, NOT NULL hợp lệ). Không thực hiện làm sạch dữ liệu hay chuẩn hóa nghiệp vụ (Business Data Quality) tại initial loader.

@@ -109,3 +109,14 @@ fastorder/db/  → connection.py, init_db.py
 **Decision:** Mỗi thay đổi phải kết thúc bằng “Docs cần cập nhật” hoặc “Không cần cập nhật docs”.
 
 **Reason:** Ngăn architecture, schema và runbook trở nên lạc hậu.
+
+---
+
+## D-012 — Separation of Ingestion Validation and Business Data Quality
+
+**Date:** 30/07/2026  
+**Decision:** Các quy tắc kiểm tra chất lượng dữ liệu nghiệp vụ (business data-quality rules) sẽ được thực hiện ở lớp Transformation (Bronze → Silver), không nằm trong initial loader.
+
+**Reason:** 
+- Initial loader chỉ chịu trách nhiệm cho Ingestion Fidelity và Structural Integrity (giữ nguyên bản dữ liệu thô, không fill NULL, không xóa bản ghi lỗi).
+- Bảo vệ dữ liệu gốc tại lớp Bronze để đảm bảo Data Lineage và phục vụ Root Cause Analysis về sau. Pipeline nạp dữ liệu cũng nhờ đó mà nhẹ nhàng và dễ bảo trì hơn.

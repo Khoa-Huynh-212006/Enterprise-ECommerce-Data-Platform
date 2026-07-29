@@ -80,6 +80,6 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 Không chuyển sang simulator cho đến khi hoàn thành:
 
 1. Đối chiếu row count CSV và PostgreSQL. *(Đã hoàn tất)*
-2. Kiểm tra orphan FK bằng SQL.
-3. Kiểm tra NULL và timestamp parsing.
-4. Ghi kết quả vào progress docs.
+2. Kiểm tra orphan FK bằng SQL. *(Đã hoàn tất)*
+3. Kiểm tra NULL. *(Đã hoàn tất)*
+4. Ghi kết quả vào progress docs. *(Đã hoàn tất)*
