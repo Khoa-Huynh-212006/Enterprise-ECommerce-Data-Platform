@@ -11,14 +11,14 @@ DROP TABLE IF EXISTS geolocation CASCADE;
 DROP TABLE IF EXISTS product_category_name_translation CASCADE;
 
 CREATE TABLE geolocation (
+    geolocation_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     geolocation_zip_code_prefix VARCHAR(10),
     geolocation_lat DECIMAL(10, 6),
     geolocation_lng DECIMAL(10, 6),
     geolocation_city VARCHAR(100),
     geolocation_state VARCHAR(2),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    PRIMARY KEY (geolocation_zip_code_prefix, geolocation_lat, geolocation_lng)
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
 CREATE TABLE customers (
