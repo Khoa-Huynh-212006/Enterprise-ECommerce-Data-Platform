@@ -342,6 +342,7 @@ services:
       POSTGRES_USER: fastorder
       POSTGRES_PASSWORD: fastorder
       POSTGRES_DB: fastorder
+      TZ: Asia/Ho_Chi_Minh
     volumes:
       - fastorder-db-volume:/var/lib/postgresql/data
     ports:
