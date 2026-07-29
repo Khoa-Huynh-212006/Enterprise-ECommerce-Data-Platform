@@ -57,21 +57,64 @@ Xác định rõ "bài toán" cần giải quyết trước khi thiết kế h�
 ```text
 Enterprise-ECommerce-Data-Platform/
 ├── config/                  # Cấu hình hệ thống, variables và credentials
-├── data/                    # Mock data và scripts sinh dữ liệu giả lập
-├── docker/                  # Dockerfile và docker-compose.yml
+├── data/                    # Nơi chứa dữ liệu cục bộ
+│   ├── processed/           # Dữ liệu đã qua xử lý
+│   ├── raw/                 # Dữ liệu thô gốc
+│   │   ├── api/
+│   │   ├── clickstream/
+│   │   ├── olist/           # Chứa các file CSV của bộ data Olist
+│   │   ├── reviews/
+│   │   └── vendor_catalog/
+│   └── sample/              # Dữ liệu mẫu để test
+├── database/                # Quản lý cấu trúc cơ sở dữ liệu
+│   └── schema.sql           # File DDL định nghĩa bảng và index cho PostgreSQL
+├── docker/                  # Cấu hình hạ tầng Container
+│   ├── config/              
+│   ├── dags/                # Thư mục chứa DAGs cho Airflow (Mount vào container)
+│   ├── logs/                # Thư mục chứa logs của Airflow
+│   ├── plugins/             # Thư mục plugins của Airflow
+│   ├── postgres/            # Dữ liệu/cấu hình mount của Postgres
+│   ├── .env                 # Biến môi trường dành riêng cho Docker
+│   └── docker-compose.yml   # File khởi chạy các dịch vụ (Postgres, v.v.)
 ├── docs/                    # Tài liệu dự án chi tiết
 │   ├── 01-business/         # Bối cảnh, quy trình nghiệp vụ và KPIs
-│   ├── 02-architecture/     # Thiết kế kiến trúc tổng thể
-│   ├── 03-data/             # Data models, Data dictionary
+│   ├── 02-architecture/     # Thiết kế kiến trúc (High-level, Logical, Physical, DFD)
+│   ├── 03-data/             # Source systems, Business entities, Data dictionary
 │   ├── 04-pipelines/        # Thiết kế luồng xử lý ETL/ELT
 │   ├── 05-operations/       # Hướng dẫn vận hành, monitoring
 │   ├── 06-decisions/        # Architecture Decision Records (ADRs)
-│   ├── 07-progress/         # Roadmap và tiến độ dự án
+│   ├── 07progress/          # Roadmap và tiến độ dự án
 │   └── development/         # Hướng dẫn setup cho Developer
-├── scripts/                 # Bash/Python scripts hỗ trợ CI/CD và setup
-├── src/                     # Mã nguồn chính (Airflow DAGs, Spark jobs, dbt models)
-├── tests/                   # Unit tests và Data tests (Data Quality)
-└── README.md                # Tài liệu tổng quan của dự án
+├── fastorder/               # Gói mã nguồn Python chính của dự án
+│   ├── db/                  # Module tương tác cơ sở dữ liệu
+│   │   ├── connection.py    # Hàm kết nối Database
+│   │   └── init_db.py       # Script khởi tạo Database
+│   ├── ingestion/           # Module nạp dữ liệu (Data Ingestion)
+│   │   ├── __init__.py
+│   │   ├── download_olist.py# Script tải dữ liệu Olist
+│   │   ├── import_postgres.py
+│   │   └── load_olist.py    # Script nạp file CSV vào PostgreSQL
+│   └── simulator/           # Module tạo dữ liệu giả lập (Real-time CDC)
+│       ├── __init__.py
+│       ├── fake_customers.py# Script sinh dữ liệu khách hàng
+│       └── fake_orders.py   # Script sinh dữ liệu đơn hàng
+├── images/                  # Chứa các hình ảnh tài liệu
+│   └── DF.png               
+├── scripts/                 # Bash/Python scripts hỗ trợ hệ thống
+│   ├── api/
+│   ├── setup/
+│   └── simulators/
+├── src/                     # Mã nguồn cho các công cụ Data (Airflow, Spark, dbt)
+│   ├── airflow/             # Cấu hình và custom operators cho Airflow
+│   ├── dbt/                 # Các models transformation của dbt
+│   ├── spark/               # Các jobs xử lý dữ liệu lớn bằng Spark
+│   └── warehouse/           # Code quản lý Data Warehouse
+├── tests/                   # Unit tests và Data tests
+├── .env                     # Tệp chứa biến môi trường cấu hình (Credentials) cho code Python
+├── .gitignore               # Khai báo các file/thư mục không đưa lên Git (như __pycache__, .env)
+├── README.md                # Tài liệu tổng quan của dự án (Tiếng Anh)
+├── README.vi.md             # Tài liệu tổng quan của dự án (Tiếng Việt)
+└── requirements.txt         # Danh sách các thư viện Python cần cài đặt (pandas, sqlalchemy, v.v.)
 ```
 
 ---

@@ -1,6 +1,6 @@
 import pandas 
 from pathlib import Path
-from fastorder.ingestion.db import get_connection
+from fastorder.db.connection import get_connection
 import time
 
 project_root = Path(__file__).resolve().parents[2]

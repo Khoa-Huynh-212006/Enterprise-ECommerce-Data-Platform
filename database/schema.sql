@@ -31,6 +31,15 @@ CREATE TABLE customers (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+
+CREATE TABLE warehouses (
+    warehouse_id VARCHAR(50) PRIMARY KEY,
+    warehouse_city VARCHAR(100),
+    warehouse_state VARCHAR(2),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 CREATE TABLE orders (
     order_id VARCHAR(50) PRIMARY KEY,
     customer_id VARCHAR(50) NOT NULL,
@@ -61,14 +70,6 @@ CREATE TABLE products (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-CREATE TABLE warehouses (
-    warehouse_id VARCHAR(50) PRIMARY KEY,
-    warehouse_city VARCHAR(100),
-    warehouse_state VARCHAR(2),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 
 
 
@@ -143,6 +144,8 @@ CREATE TABLE inventory (
     warehouse_id VARCHAR(50) NOT NULL,
     product_id VARCHAR(50) NOT NULL,
     quantity_available INT DEFAULT 0 NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(warehouse_id),
     FOREIGN KEY (product_id) REFERENCES products(product_id),
     PRIMARY KEY (warehouse_id, product_id)
