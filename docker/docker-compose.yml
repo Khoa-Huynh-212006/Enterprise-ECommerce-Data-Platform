@@ -335,5 +335,24 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
+  # Postgres Operational database 
+  postgres-fastorder:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: fastorder
+      POSTGRES_PASSWORD: fastorder
+      POSTGRES_DB: fastorder
+    volumes:
+      - fastorder-db-volume:/var/lib/postgresql/data
+    ports:
+      - "5433:5432" # Cổng máy host (5433) : Cổng bên trong container (5432)
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "fastorder"]
+      interval: 10s
+      retries: 5
+      start_period: 5s
+    restart: always
+
 volumes:
   postgres-db-volume:
+  fastorder-db-volume:
