@@ -102,3 +102,9 @@ Composite key dựa trên ZIP/latitude/longitude không phải khóa nghiệp v�
 - Transaction commit.
 - Không có partial snapshot.
 - Exception được raise lại để shell/CI/Airflow nhận biết thất bại.
+
+## Post-load Reconciliation
+
+- Bootstrap pipeline chạy một lần 3] đã được kiểm chứng (validation) toàn vẹn dữ liệu.
+- Quá trình đối chiếu (reconciliation) đối với toàn bộ 9 bảng cho kết quả trùng khớp hoàn toàn.
+- Số lượng dòng (row-count) từ file CSV được xác nhận đã chuyển chính xác 100% vào FastOrder PostgreSQL thông qua SQLAlchemy transaction.

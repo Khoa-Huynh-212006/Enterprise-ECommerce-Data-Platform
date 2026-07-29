@@ -47,6 +47,7 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
   - FK-safe load order.
   - Rollback toàn bộ nếu một bảng lỗi.
 - Olist data đã load thành công.
+- Post-load row-count validation hoàn tất thành công.
 
 ## Current database tables
 
@@ -70,7 +71,6 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 - Initial loader không idempotent:
   - Chạy lần hai với `append` sẽ gặp duplicate PK.
   - Muốn chạy lại phải reset schema trước.
-- Chưa có post-load reconciliation report.
 - Chưa có Faker simulator.
 - Chưa có Airflow incremental DAG.
 - Chưa có Bronze/Silver/Gold implementation.
@@ -79,7 +79,7 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 
 Không chuyển sang simulator cho đến khi hoàn thành:
 
-1. Đối chiếu row count CSV và PostgreSQL.
+1. Đối chiếu row count CSV và PostgreSQL. *(Đã hoàn tất)*
 2. Kiểm tra orphan FK bằng SQL.
 3. Kiểm tra NULL và timestamp parsing.
 4. Ghi kết quả vào progress docs.

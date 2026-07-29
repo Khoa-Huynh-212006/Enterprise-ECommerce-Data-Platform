@@ -294,7 +294,7 @@ Schema-first database              COMPLETE
 SQLAlchemy connection layer        COMPLETE
 Database bootstrap                 COMPLETE
 Initial Olist load                 COMPLETE
-Post-load validation               NEXT
+Post-load validation               COMPLETE
 Faker simulator                    NOT STARTED
 Airflow incremental ingestion      NOT STARTED
 Bronze/Silver/Gold                 NOT STARTED
