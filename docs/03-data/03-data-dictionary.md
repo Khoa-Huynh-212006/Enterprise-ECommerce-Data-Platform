@@ -52,7 +52,7 @@
 |---|---|---|---|
 | `warehouse_id` | VARCHAR(50) | PK | Custom |
 | `warehouse_city` | VARCHAR(100) |  | Custom |
-| `warehouse_state` | VARCHAR(2) |  | Custom |
+| `warehouse_region` | VARCHAR(20) |  | Custom |
 | `created_at` | TIMESTAMP | default current timestamp | Derived |
 | `updated_at` | TIMESTAMP | default current timestamp, indexed | Derived |
 

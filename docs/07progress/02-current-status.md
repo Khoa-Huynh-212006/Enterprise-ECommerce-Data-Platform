@@ -66,6 +66,7 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 ## Current limitations
 
 - `warehouses` và `inventory` chưa được seed dữ liệu nghiệp vụ.
+-> **Đã xử lý một phần:** Đã chốt danh sách 5 warehouse chiến lược và cập nhật schema `warehouses` theo vùng miền (NORTH, CENTRAL, SOUTH). Bảng `inventory` chuẩn bị được seed.
 - Olist orders/order_items có thể chưa được gán `warehouse_id`.
 - `updated_at` có default khi INSERT nhưng không tự đổi khi UPDATE; simulator phải cập nhật rõ ràng hoặc bổ sung trigger sau này.
 - Initial loader không idempotent:
@@ -81,5 +82,8 @@ Không chuyển sang simulator cho đến khi hoàn thành:
 
 1. Đối chiếu row count CSV và PostgreSQL. *(Đã hoàn tất)*
 2. Kiểm tra orphan FK bằng SQL. *(Đã hoàn tất)*
-3. Kiểm tra NULL. *(Đã hoàn tất)*
-4. Ghi kết quả vào progress docs. *(Đã hoàn tất)*
+3. Kiểm tra NULL ở các cột bắt buộc. *(Đã hoàn tất)*
+4. Thiết kế cấu trúc và seed data cho Warehouses (FastOrder VN) *(Đã hoàn tất)*
+5. Seed dữ liệu Inventory ban đầu - **IN PROGRESS**
+6. Ghi kết quả vào progress docs. *(Đã hoàn tất)*
+

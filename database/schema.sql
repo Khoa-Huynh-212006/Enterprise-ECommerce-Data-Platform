@@ -35,7 +35,7 @@ CREATE TABLE customers (
 CREATE TABLE warehouses (
     warehouse_id VARCHAR(50) PRIMARY KEY,
     warehouse_city VARCHAR(100),
-    warehouse_state VARCHAR(2),
+    warehouse_region VARCHAR(20),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );

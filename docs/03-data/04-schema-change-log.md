@@ -49,3 +49,20 @@ Change:
 Result:
 
 - Initial Olist load completed successfully.
+
+## Cập nhật bảng Warehouses cho nghiệp vụ tại Việt Nam
+
+**Date:** 30/07/2026
+### Thay đổi cấu trúc (DDL)
+- **Bảng:** `warehouses`
+- **Thay đổi cột:** Đổi tên `warehouse_state` thành `warehouse_region`.
+- **Thay đổi kiểu dữ liệu:** Đổi từ `VARCHAR(2)` (chuẩn mã bang) thành `VARCHAR(20)` để lưu trữ tên miền (NORTH, CENTRAL, SOUTH).
+
+### Lý do (Business Context)
+- Dataset gốc Olist sử dụng mã bang 2 chữ cái (VD: SP, RJ), không phù hợp với bối cảnh địa lý của FastOrder (doanh nghiệp tại Việt Nam). 
+- Thay đổi để phục vụ việc phân bổ 5 kho hàng chiến lược theo 3 miền: 
+  1. Hà Nội (NORTH)
+  2. Hải Phòng (NORTH)
+  3. Đà Nẵng (CENTRAL)
+  4. TP.HCM (SOUTH)
+  5. Cần Thơ (SOUTH)
