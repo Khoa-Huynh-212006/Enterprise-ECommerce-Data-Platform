@@ -84,6 +84,7 @@ Không chuyển sang simulator cho đến khi hoàn thành:
 2. Kiểm tra orphan FK bằng SQL. *(Đã hoàn tất)*
 3. Kiểm tra NULL ở các cột bắt buộc. *(Đã hoàn tất)*
 4. Thiết kế cấu trúc và seed data cho Warehouses (FastOrder VN) *(Đã hoàn tất)*
-5. Seed dữ liệu Inventory ban đầu - **IN PROGRESS**
-6. Ghi kết quả vào progress docs. *(Đã hoàn tất)*
+5. Seed dữ liệu Inventory ban đầu *(Đã hoàn tất)*
+6. Seed dữ liệu Inventory ban đầu - **NEXT**
+7. Ghi kết quả vào progress docs. *(Đã hoàn tất)*
 

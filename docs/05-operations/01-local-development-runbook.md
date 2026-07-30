@@ -1,6 +1,6 @@
 # Local Development Runbook
 
-**Cập nhật:** 29/07/2026
+**Cập nhật:** 30/07/2026
 
 ## 1. Start infrastructure
 
@@ -69,7 +69,14 @@ SELECT COUNT(*) FROM geolocation;
 SELECT COUNT(*) FROM product_category_name_translation;
 ```
 
-## 7. Common failures
+## 7. Seed Warehouses
+Khởi tạo 5 kho hàng chiến lược cho FastOrder Việt Nam (Hà Nội, Hải Phòng, Đà Nẵng, TP.HCM, Cần Thơ):
+
+```bash
+    python -m fastorder.db.seed_warehouses
+```
+
+## 8. Common failures
 
 ### `IntegrityError` / SQLAlchemy `gkpj`
 

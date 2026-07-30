@@ -297,6 +297,18 @@ order_reviews
 - Chốt mốc Post-load validation hoàn tất. Toàn bộ 9/9 bảng khớp dòng, 6/6 quan hệ không orphan, 17/17 cột bắt buộc tuân thủ constraint.
 ---
 
+## Mốc 11 — Thiết kế mạng lưới và Seed dữ liệu Warehouse
+
+### 30/07/2026
+**Đã thực hiện**
+- Thiết kế mạng lưới 5 kho hàng chiến lược bao phủ 3 miền tại Việt Nam: Hà Nội, Hải Phòng (NORTH); Đà Nẵng (CENTRAL); TP.HCM, Cần Thơ (SOUTH).
+- Xây dựng kịch bản `seed_warehouses.py` ứng dụng cơ chế UPSERT (`ON CONFLICT DO UPDATE`) để đảm bảo tính Idempotent.
+- Tích hợp kiểm đếm trạng thái (`SELECT COUNT(*)`) ngay bên trong Transaction (`engine.begin()`) để xác nhận tính toàn vẹn.
+
+**Kết quả**
+- Chạy thành công quá trình Warehouse Seed.
+- 5 bản ghi kho hàng đã được nạp an toàn vào PostgreSQL. Hạ tầng kho bãi đã hoàn tất và sẵn sàng cho bước phân bổ tồn kho (Inventory).
+
 ## Trạng thái chốt ngày 29/07/2026
 
 ```text
