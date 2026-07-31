@@ -13,6 +13,7 @@ def validate_simulator():
         simulated_order_count  = conn.execute(query_check_data).scalar_one()
         if simulated_order_count == 0:
             raise ValueError("Prerequisite Failed: Không có simulated order để validation.")
+        print(f"Prerequisite PASSED: Có {simulated_order_count} simulated orders để validation.")
 
         # RULE 1: Mọi đơn hàng simulator phải có ít nhất 1 order_item
         rule1_query = text("""
@@ -135,11 +136,99 @@ def validate_simulator():
         else:
             print("RULE 7 PASSED: 100% đơn hàng thuộc đúng nguồn (olist_seed hoặc simulator).")
 
-        if errors_found == 0: 
-            print("Tất cả dữ liệu sinh ra từ simulator đều hợp lệ")
+        # RULE 8: Status hợp lệ
+        rule8_query = text("""
+            SELECT order_id, order_status
+            FROM orders
+            WHERE source_system = 'simulator'
+              AND (order_status IS NULL OR order_status NOT IN ('created', 'approved', 'processing', 'shipped', 'delivered', 'canceled', 'unavailable'));
+        """)
+        rule8_fails = conn.execute(rule8_query).fetchall()
+        if rule8_fails:
+            print(f"RULE 8 FAILED: Có {len(rule8_fails)} đơn hàng mang trạng thái không tồn tại!")
+            errors_found += 1
         else:
-            raise ValueError(f"Simulator validation thất bại: {errors_found} rule không đạt.")
+            print("RULE 8 PASSED: 100% đơn hàng nằm trong tập trạng thái hợp lệ.")
+
+        # RULE 9: Ma trận Timestamp cho order_approved_at (Kiểm tra 2 chiều)
+        rule9_query = text("""
+            SELECT order_id, order_status
+            FROM orders
+            WHERE source_system = 'simulator'
+              AND (
+                  (order_status IN ('created', 'canceled', 'unavailable') AND order_approved_at IS NOT NULL)
+                  OR
+                  (order_status IN ('approved', 'processing', 'shipped', 'delivered') AND order_approved_at IS NULL)
+              );
+        """)
+        rule9_fails = conn.execute(rule9_query).fetchall()
+        if rule9_fails:
+            print(f"RULE 9 FAILED: Có {len(rule9_fails)} đơn hàng vi phạm ma trận thời gian Duyệt đơn (Approved)!")
+            errors_found += 1
+        else:
+            print("RULE 9 PASSED: Ma trận thời gian duyệt đơn chính xác 2 chiều.")
+
+        # RULE 10: Ma trận Timestamp cho order_delivered_carrier_date (Kiểm tra 2 chiều)
+        rule10_query = text("""
+            SELECT order_id, order_status
+            FROM orders
+            WHERE source_system = 'simulator'
+              AND (
+                  (order_status IN ('created', 'approved', 'processing', 'canceled', 'unavailable') AND order_delivered_carrier_date IS NOT NULL)
+                  OR
+                  (order_status IN ('shipped', 'delivered') AND order_delivered_carrier_date IS NULL)
+              );
+        """)
+        rule10_fails = conn.execute(rule10_query).fetchall()
+        if rule10_fails:
+            print(f"RULE 10 FAILED: Có {len(rule10_fails)} đơn hàng vi phạm ma trận thời gian Giao Vận (Carrier)!")
+            errors_found += 1
+        else:
+            print("RULE 10 PASSED: Ma trận thời gian giao cho đơn vị vận chuyển chính xác 2 chiều.")
+
+        # RULE 11: Ma trận Timestamp cho order_delivered_customer_date (Kiểm tra 2 chiều)
+        rule11_query = text("""
+            SELECT order_id, order_status
+            FROM orders
+            WHERE source_system = 'simulator'
+              AND (
+                  (order_status != 'delivered' AND order_delivered_customer_date IS NOT NULL)
+                  OR
+                  (order_status = 'delivered' AND order_delivered_customer_date IS NULL)
+              );
+        """)
+        rule11_fails = conn.execute(rule11_query).fetchall()
+        if rule11_fails:
+            print(f"RULE 11 FAILED: Có {len(rule11_fails)} đơn hàng vi phạm ma trận thời gian Hoàn Thành (Customer)!")
+            errors_found += 1
+        else:
+            print("RULE 11 PASSED: Ma trận thời gian giao tới khách hàng chính xác 2 chiều.")
+
+        # RULE 12: Timestamp đúng trình tự nghiệp vụ + Bổ sung Technical Timestamp (updated_at)
+        rule12_query = text("""
+            SELECT order_id
+            FROM orders
+            WHERE source_system = 'simulator'
+              AND (
+                  (order_approved_at IS NOT NULL AND order_approved_at < order_purchase_timestamp) OR
+                  (order_delivered_carrier_date IS NOT NULL AND order_delivered_carrier_date < order_approved_at) OR
+                  (order_delivered_customer_date IS NOT NULL AND order_delivered_customer_date < order_delivered_carrier_date) OR
+                  (updated_at < order_purchase_timestamp 
+                  OR order_purchase_timestamp IS NULL
+                  OR updated_at IS NULL)
+              );
+        """)
+        rule12_fails = conn.execute(rule12_query).fetchall()
+        if rule12_fails:
+            print(f"RULE 12 FAILED: Phát hiện {len(rule12_fails)} đơn hàng vi phạm dòng thời gian vật lý (Time travel)!")
+            errors_found += 1
+        else:
+            print("RULE 12 PASSED: 100% đơn hàng tuân thủ trình tự thời gian vật lý và kỹ thuật.")
+
+        if errors_found == 0: 
+            print("\nTất cả dữ liệu sinh ra từ simulator đều hợp lệ.")
+        else:
+            raise ValueError(f"\nSimulator validation thất bại: {errors_found} rule không đạt.")
 
 if __name__ == "__main__":
     validate_simulator()
-
