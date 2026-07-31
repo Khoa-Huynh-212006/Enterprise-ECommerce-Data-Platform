@@ -33,7 +33,11 @@ def load_data():
                 file_path = root_path / "data" / "raw" / "olist" / file_name
 
                 print(f"Đang ghi dữ liệu {file_name} thành DataFrame")
-                df = pd.read_csv(file_path)        
+                df = pd.read_csv(file_path)
+                if entity == "orders": 
+                    df['source_system'] = 'olist_seed'
+                    df['created_at'] = pd.to_datetime(df['order_purchase_timestamp'])
+                    df['updated_at'] = pd.to_datetime(df['order_purchase_timestamp'])   
                 print(f"Đã ghi xong dữ liệu {file_name} vào DataFrame với {len(df)} dòng dữ liệu")
 
                 print(f"Tiến hành đẩy dữ liệu vào Database PostgreSQL")

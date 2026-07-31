@@ -104,8 +104,8 @@ def generate_single_order(): #hàm tạo đơn hàng
 
 
         order_query = text("""
-            INSERT INTO orders (order_id, customer_id, order_status, order_purchase_timestamp, warehouse_id)
-            VALUES (:order_id, :customer_id, 'created', :created_at, :warehouse_id)
+            INSERT INTO orders (order_id, customer_id, order_status, order_purchase_timestamp, warehouse_id, source_system)
+            VALUES (:order_id, :customer_id, 'created', :created_at, :warehouse_id, 'simulator')
         """)
         conn.execute(order_query, {
             "order_id": order_id, "customer_id": customer_id, 

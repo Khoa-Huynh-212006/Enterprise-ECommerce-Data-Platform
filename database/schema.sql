@@ -52,6 +52,7 @@ CREATE TABLE orders (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     warehouse_id VARCHAR(50),
+    source_system VARCHAR(50) DEFAULT 'olist_seed' NOT NULL,
     FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
     FOREIGN KEY (warehouse_id) REFERENCES warehouses(warehouse_id)
 );
