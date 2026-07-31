@@ -309,6 +309,24 @@ order_reviews
 - Chạy thành công quá trình Warehouse Seed.
 - 5 bản ghi kho hàng đã được nạp an toàn vào PostgreSQL. Hạ tầng kho bãi đã hoàn tất và sẵn sàng cho bước phân bổ tồn kho (Inventory).
 
+**Đã thực hiện**
+- Seed idempotent 5 warehouse FastOrder.
+- Sinh sparse inventory bằng fixed random seed 42.
+- Mỗi sản phẩm có mặt tại 2–3 warehouse.
+- Inventory seed dùng `ON CONFLICT DO NOTHING`.
+- Inventory validation hoàn tất và toàn bộ rule PASS.
+
+## Mốc 12 — Faker Simulator Implementation (CREATE_ORDER)
+
+### 30/07/2026
+**Đã thực hiện**
+- Thiết kế và code thành công script `order_generator.py` mô phỏng sự kiện `CREATE_ORDER`.
+- Cấu trúc Generator gói gọn 4 thao tác (`orders`, `order_items`, `order_payments`, `inventory`) trong 1 Transaction duy nhất.
+- Chốt logic sinh dữ liệu: Random số mặt hàng theo trọng số (1-50), tra cứu giá/freight từ dữ liệu lịch sử bằng `DISTINCT ON`, áp dụng giới hạn B2C (max 10 items/line).
+- Giải quyết thành công rủi ro Overselling/Race Condition bằng kỹ thuật Optimistic Concurrency Control (kiểm tra `rowcount` trên từng lệnh `UPDATE` tồn kho).
+
+**Kết quả**
+- Script tạo đơn hàng thành công, dữ liệu sinh ra sạch, chuẩn logic nghiệp vụ FastOrder VN và không vi phạm ràng buộc cơ sở dữ liệu.
 ## Trạng thái chốt ngày 29/07/2026
 
 ```text

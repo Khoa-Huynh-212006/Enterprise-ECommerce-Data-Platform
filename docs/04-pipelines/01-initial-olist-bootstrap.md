@@ -111,3 +111,15 @@ Composite key dựa trên ZIP/latitude/longitude không phải khóa nghiệp v�
 - Required NULL validation thành công: 17/17 trường dữ liệu bắt buộc tuân thủ đúng contract.
 
 > **Lưu ý Kiến trúc:** Quá trình validation tại bước này chỉ tập trung vào **Ingestion Fidelity** (dữ liệu vào khớp dữ liệu nguồn) và **Structural Integrity** (Schema, PK, FK, NOT NULL hợp lệ). Không thực hiện làm sạch dữ liệu hay chuẩn hóa nghiệp vụ (Business Data Quality) tại initial loader.
+
+## Full Bootstrap Sequence
+
+Sau khi chạy `docker compose up -d`, đây là thứ tự chạy lệnh đầy đủ để thiết lập toàn bộ môi trường dữ liệu local:
+
+```bash
+python -m fastorder.db.init_db
+python -m fastorder.ingestion.load_olist
+python -m fastorder.ingestion.validate_olist_load
+python -m fastorder.db.seed_warehouses
+python -m fastorder.db.seed_inventory
+python -m fastorder.db.validate_inventory

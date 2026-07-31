@@ -134,3 +134,46 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:** 
 - Tránh việc phân bổ tất cả sản phẩm vào tất cả các kho (Dense Inventory), gây ra sự thiếu thực tế về mặt nghiệp vụ logistics và làm phình to database không cần thiết (chỉ tạo ~72.000 records thay vì ~164.000 records).
 - Việc dùng Fixed Seed (`random.seed(42)`) đảm bảo tính tái lập (reproducibility) khi reset DB, hỗ trợ tốt nhất cho quá trình debug, test và data validation.
+
+```markdown
+---
+
+## D-013 — Synthetic Sparse Inventory Strategy
+
+**Date:** 30/07/2026  
+**Decision:** 
+- Áp dụng chiến lược Sparse Inventory, phân bổ mỗi sản phẩm có mặt tại 2–3 warehouse.
+- Sử dụng Fixed Seed (`random.seed(42)`).
+- Sử dụng mệnh đề `ON CONFLICT DO NOTHING` cho quá trình seed inventory.
+
+**Reason:** 
+- Tạo ra phân phối dữ liệu thực tế hơn so với việc seed tất cả sản phẩm vào tất cả kho.
+- Fixed seed đảm bảo tính nhất quán (reproducible) của dữ liệu mô phỏng qua các lần thiết lập môi trường.
+- `ON CONFLICT DO NOTHING` là chốt chặn an toàn cốt lõi: nó ngăn việc ghi đè trạng thái vận hành (operational inventory) nếu script seed vô tình bị chạy lại trong lúc hệ thống đang có dữ liệu giao dịch động.
+
+---
+
+## D-014 — Faker Simulator: State Machine & Quantity Logic
+
+**Date:** 30/07/2026  
+**Decision:** 
+1. **Event CREATE_ORDER:** Khởi tạo order với status mặc định là `created`. Payment được sinh đồng thời trong cùng một transaction cùng với việc trừ số lượng (`quantity`) vào bảng `inventory`.
+2. **Event ADVANCE_ORDER_STATUS:** Không random trạng thái lộn xộn, mà chỉ tịnh tiến (UPDATE) ngẫu nhiên theo đúng luồng State Machine (ví dụ: `created` -> `approved` -> `processing` -> `shipped` -> `delivered`).
+3. **Item Quantity:** Số lượng từng item được chọn ngẫu nhiên trong khoảng `[1, quantity_available]`.
+
+**Reason:** 
+- Đảm bảo tính toàn vẹn dữ liệu: Order sinh ra là phải thu tiền và trừ kho ngay lập tức, nếu lỗi 1 bước sẽ Rollback toàn bộ.
+- Tuân thủ State Machine giúp Pipeline Airflow Incremental sau này có cơ hội "bắt" (capture) được các sự kiện UPDATE thay đổi trạng thái theo thời gian thực (CDC mô phỏng).
+
+---
+
+## D-015 — Faker Simulator: Concurrency Control & B2C Limit
+
+**Date:** 30/07/2026  
+**Decision:** 
+1. **Quantity Cap:** Giới hạn số lượng mua tối đa cho mỗi mặt hàng trong một đơn là 10 (hoặc bằng tồn kho hiện tại nếu tồn kho < 10) để phản ánh đúng hành vi mua sắm B2C.
+2. **Concurrency Handling:** Không sử dụng `executemany` cho lệnh `UPDATE inventory` vì driver `psycopg2` không cam kết trả về `rowcount` chính xác trong chế độ này. Thay vào đó, Simulator duyệt vòng lặp thực thi từng lệnh `UPDATE` kèm điều kiện `quantity_available >= :buy_qty` và kiểm tra `rowcount == 1`. 
+
+**Reason:** 
+- Đảm bảo tính chân thực của dữ liệu mô phỏng.
+- Kỹ thuật Optimistic Locking (kiểm tra rowcount) khóa chặt lỗ hổng Overselling khi chạy nhiều tiến trình Simulator song song, nếu có tranh chấp tài nguyên (race condition), transaction sẽ lập tức Rollback.

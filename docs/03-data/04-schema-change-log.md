@@ -66,3 +66,23 @@ Result:
   3. Đà Nẵng (CENTRAL)
   4. TP.HCM (SOUTH)
   5. Cần Thơ (SOUTH)
+
+## Bổ sung cột quantity cho bảng order_items
+
+**Date:** 30/07/2026
+
+### Thay đổi cấu trúc (DDL)
+* **Bảng:** `order_items`
+* **Thay đổi:** Thêm cột `quantity INT NOT NULL DEFAULT 1`.
+
+### Lý do (Business Context)
+* Dataset gốc Olist lưu mỗi bản ghi `order_items` là 1 sản phẩm riêng biệt (quantity luôn = 1 nhưng ngầm định).
+* Để phục vụ hệ thống FastOrder Faker Simulator sinh đơn hàng thực tế (khách hàng có thể mua nhiều sản phẩm cùng loại trên một dòng order line), bắt buộc phải có cột `quantity` để tính toán đúng luồng thanh toán và trừ kho.
+* Việc gán `DEFAULT 1` đảm bảo tính tương thích ngược (backward compatibility) với tiến trình Initial Loader nạp từ CSV gốc.
+
+## Triển khai và Xác thực Cột Quantity
+
+**Date:** 30/07/2026
+
+* **Trạng thái:** **ĐÃ TRIỂN KHAI**
+* **Xác thực:** Đã bootstrap lại toàn bộ database, initial loader chạy thành công với `DEFAULT 1`. Faker Simulator đã tích hợp và sinh giá trị ngẫu nhiên (1-10) thành công cho các đơn hàng mới.

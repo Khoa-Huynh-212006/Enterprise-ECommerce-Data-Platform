@@ -92,6 +92,7 @@ CREATE TABLE order_items (
     price DECIMAL(10, 2) NOT NULL,
     freight_value DECIMAL(10, 2) NOT NULL,
     warehouse_id VARCHAR(50),
+    quantity INT NOT NULL DEFAULT 1,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (order_id) REFERENCES orders(order_id),

@@ -78,13 +78,14 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 
 ## Current phase gate
 
-Không chuyển sang simulator cho đến khi hoàn thành:
+Không chuyển sang Airflow DAG cho đến khi hoàn thành:
 
-1. Đối chiếu row count CSV và PostgreSQL. *(Đã hoàn tất)*
-2. Kiểm tra orphan FK bằng SQL. *(Đã hoàn tất)*
-3. Kiểm tra NULL ở các cột bắt buộc. *(Đã hoàn tất)*
-4. Thiết kế cấu trúc và seed data cho Warehouses (FastOrder VN) *(Đã hoàn tất)*
-5. Seed dữ liệu Inventory ban đầu *(Đã hoàn tất)*
-6. Seed dữ liệu Inventory ban đầu - **NEXT**
-7. Ghi kết quả vào progress docs. *(Đã hoàn tất)*
-
+1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**
+2. Kiểm tra orphan FK bằng SQL - **COMPLETE**
+3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**
+4. Warehouse design and seed - **COMPLETE**
+5. Inventory design and seed - **COMPLETE**
+6. Inventory validation - **COMPLETE**
+7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**
+8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**
+9. Mở rộng Simulator chạy Batch (Nhiều đơn hàng) - **NEXT**

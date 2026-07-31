@@ -111,21 +111,21 @@
 
 ---
 
-## `order_items`
+## Table: `order_items`
+**Description:** Chi tiết các sản phẩm trong một đơn hàng.
 
-| Column | Type | Constraint | Source |
-|---|---|---|---|
-| `order_id` | VARCHAR(50) | PK part, FK → orders | Olist |
-| `order_item_id` | INT | PK part | Olist |
-| `product_id` | VARCHAR(50) | NOT NULL, FK → products | Olist |
-| `seller_id` | VARCHAR(50) | NOT NULL, FK → sellers | Olist |
-| `shipping_limit_date` | TIMESTAMP |  | Olist |
-| `price` | DECIMAL(10,2) | NOT NULL | Olist |
-| `freight_value` | DECIMAL(10,2) | NOT NULL | Olist |
-| `warehouse_id` | VARCHAR(50) | nullable, FK → warehouses | Custom |
-| `created_at` | TIMESTAMP | default current timestamp | Derived |
-| `updated_at` | TIMESTAMP | default current timestamp, indexed | Derived |
-
+| Column Name | Data Type | PK/FK | Nullable | Description |
+| :--- | :--- | :--- | :--- | :--- |
+| `order_id` | VARCHAR(50) | PK, FK | NO | Mã đơn hàng (Tham chiếu `orders`). |
+| `order_item_id` | INT | PK | NO | Số thứ tự (line number) của sản phẩm trong đơn hàng. |
+| `product_id` | VARCHAR(50) | FK | NO | Mã sản phẩm (Tham chiếu `products`). |
+| `seller_id` | VARCHAR(50) | FK | NO | Mã nhà bán hàng (Tham chiếu `sellers`). |
+| `shipping_limit_date`| TIMESTAMP | - | NO | Hạn chót giao hàng cho đơn vị vận chuyển. |
+| `price` | DECIMAL(10,2) | - | NO | Đơn giá của 1 sản phẩm. |
+| `freight_value` | DECIMAL(10,2) | - | NO | Phí vận chuyển cho line item này. |
+| `quantity` | INT | - | NO | Số lượng mua của sản phẩm này (DEFAULT 1). |
+| `created_at` | TIMESTAMP | - | NO | Thời điểm tạo bản ghi. |
+| `updated_at` | TIMESTAMP | - | NO | Thời điểm cập nhật cuối cùng. |
 ---
 
 ## `order_reviews`
