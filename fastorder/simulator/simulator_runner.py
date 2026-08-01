@@ -33,7 +33,7 @@ def run_simulator(
                 break
 
             prefix = f"Vô hạn - Chu kỳ {cycle_count}" if cycles is None else f"Chu kỳ {cycle_count}/{cycles}"
-            print(f"{prefix}]")
+            print(f"{prefix}")
             
 
             orders_to_create = random.randint(min_orders_per_cycle, max_orders_per_cycle)

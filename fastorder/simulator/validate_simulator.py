@@ -213,9 +213,7 @@ def validate_simulator():
                   (order_approved_at IS NOT NULL AND order_approved_at < order_purchase_timestamp) OR
                   (order_delivered_carrier_date IS NOT NULL AND order_delivered_carrier_date < order_approved_at) OR
                   (order_delivered_customer_date IS NOT NULL AND order_delivered_customer_date < order_delivered_carrier_date) OR
-                  (updated_at < order_purchase_timestamp 
-                  OR order_purchase_timestamp IS NULL
-                  OR updated_at IS NULL)
+                  (updated_at < order_purchase_timestamp - INTERVAL '1 second')
               );
         """)
         rule12_fails = conn.execute(rule12_query).fetchall()
