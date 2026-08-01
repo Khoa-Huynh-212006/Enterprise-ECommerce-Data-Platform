@@ -37,7 +37,11 @@ def get_next_status(current_status: str) -> str | None:
 def order_status_updater():
     engine = get_engine()
     nums_order_will_update = random.randint(1, 20)
-    
+    summary = {
+        "selected_orders": 0,
+        "updated_orders": 0,
+        "transition_counts": {}
+    }
     with engine.begin() as conn:
         orders_valid_query = text("""
             SELECT order_id, order_status
@@ -59,8 +63,9 @@ def order_status_updater():
         
         if not results:
             print("Không có order nào đang chờ update status (hoặc chưa đủ thời gian chờ nghiệp vụ).")
-            return None
-
+            return summary
+        
+        summary["selected_orders"] = len(results)
         print(f"Tiến hành cập nhật trạng thái cho {len(results)} đơn hàng...")
 
         for row in results: 
@@ -142,9 +147,13 @@ def order_status_updater():
                     f"Concurrency Conflict / State Drift detected for order {order_id}. "
                     f"Expected rowcount 1, got {result.rowcount}."
                 )
-                
+            summary["updated_orders"] += 1
+            transition_key = f"{current_status}->{next_status}"
+            summary["transition_counts"][transition_key] = summary["transition_counts"].get(transition_key, 0) + 1
             print(f"  -> Order {order_id[:8]}... : {current_status} => {next_status}")
-
+    return summary
 if __name__ == "__main__":
     print("Bắt đầu tiến trình cập nhật trạng thái đơn hàng")
-    order_status_updater()
+    result = order_status_updater()
+    print("\nKết quả thực thi:")
+    print(result)
