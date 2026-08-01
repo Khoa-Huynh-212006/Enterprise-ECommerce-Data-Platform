@@ -89,3 +89,12 @@ Không chuyển sang Airflow DAG cho đến khi hoàn thành:
 7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**
 8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**
 9. Mở rộng Simulator chạy Batch (Nhiều đơn hàng) - **NEXT**
+
+
+## Trạng thái hiện tại (Tính đến 31/07/2026)
+
+*   **Giai đoạn:** Data Quality & Validation (Hoàn tất).
+*   **Tình trạng hệ thống:** Cỗ máy Simulator (gồm Generator và Updater) đã hoạt động trơn tru, sinh dữ liệu chuẩn xác về mặt tài chính (Reconciliation), không gian (Kho bãi) và logic thời gian vật lý (Time-series).
+*   **Thành tựu cốt lõi:** Chốt chặt 12 quy tắc Data Invariants thông qua phương pháp Negative Testing bằng SQL, đảm bảo không có rác dữ liệu hay nghịch lý thời gian trong quá trình giả lập.
+*   **Mục tiêu tiếp theo:** Chuẩn bị hạ tầng để đưa dòng dữ liệu giả lập này chảy vào các hệ thống Data Pipeline thực thụ (như Kafka, Airflow, hoặc Data Warehouse).
+

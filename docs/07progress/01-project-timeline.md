@@ -327,6 +327,13 @@ order_reviews
 
 **Kết quả**
 - Script tạo đơn hàng thành công, dữ liệu sinh ra sạch, chuẩn logic nghiệp vụ FastOrder VN và không vi phạm ràng buộc cơ sở dữ liệu.
+
+### 31/07/2026:
+- Hoàn thiện module `order_status_updater` với cơ chế khóa dòng (FOR UPDATE SKIP LOCKED) và hoàn trả tồn kho (Atomic Restock).
+- Xây dựng thành công bộ kiểm thử chất lượng dữ liệu độc lập `validate_simulator.py`.
+- Vượt qua toàn bộ 12 rules kiểm tra Data Invariants (Completeness, Consistency, Boundaries, Temporal & State Logic).
+- Smoke tests `ADVANCE_ORDER_STATUS` và `SIMULATOR_VALIDATION`: **PASS**.
+
 ## Trạng thái chốt ngày 29/07/2026
 
 ```text
