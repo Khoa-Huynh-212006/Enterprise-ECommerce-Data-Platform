@@ -34,15 +34,22 @@ def get_next_status(current_status: str) -> str | None:
 
     return random.choices(possible_statuses, weights=weights, k=1)[0]
 
-def order_status_updater():
+def order_status_updater() -> dict:
+    """
+    Quét và cập nhật trạng thái đơn hàng.
+    Trả về dictionary chứa các metrics để Runner tổng hợp.
+    """
     engine = get_engine()
     nums_order_will_update = random.randint(1, 20)
+    
     summary = {
         "selected_orders": 0,
         "updated_orders": 0,
         "transition_counts": {}
     }
+    
     with engine.begin() as conn:
+       
         orders_valid_query = text("""
             SELECT order_id, order_status
             FROM orders
@@ -63,8 +70,8 @@ def order_status_updater():
         
         if not results:
             print("Không có order nào đang chờ update status (hoặc chưa đủ thời gian chờ nghiệp vụ).")
-            return summary
-        
+            return summary 
+
         summary["selected_orders"] = len(results)
         print(f"Tiến hành cập nhật trạng thái cho {len(results)} đơn hàng...")
 
@@ -75,6 +82,7 @@ def order_status_updater():
             if not next_status:
                 continue
 
+           
             if next_status in ("canceled", "unavailable"):
                 count_query = text("""
                     SELECT COUNT(*) FROM (
@@ -104,7 +112,6 @@ def order_status_updater():
                 """)
                 restock_result = conn.execute(restock_query, {"order_id": order_id})
                 
-
                 if restock_result.rowcount != expected_count:
                     raise ValueError(
                         f"Inventory Restock Mismatch for order {order_id}: "
@@ -113,7 +120,6 @@ def order_status_updater():
                     )
                 print(f"  -> Đã hoàn trả tồn kho thành công cho đơn {order_id[:8]}...")
 
-          
             update_params = {
                 "order_id": order_id,
                 "current_status": current_status,
@@ -147,13 +153,17 @@ def order_status_updater():
                     f"Concurrency Conflict / State Drift detected for order {order_id}. "
                     f"Expected rowcount 1, got {result.rowcount}."
                 )
+            
             summary["updated_orders"] += 1
             transition_key = f"{current_status}->{next_status}"
             summary["transition_counts"][transition_key] = summary["transition_counts"].get(transition_key, 0) + 1
+                
             print(f"  -> Order {order_id[:8]}... : {current_status} => {next_status}")
+
     return summary
+
 if __name__ == "__main__":
-    print("Bắt đầu tiến trình cập nhật trạng thái đơn hàng")
+    print("BẮT ĐẦU TIẾN TRÌNH CẬP NHẬT TRẠNG THÁI ĐƠN HÀNG")
     result = order_status_updater()
     print("\nKết quả thực thi:")
     print(result)

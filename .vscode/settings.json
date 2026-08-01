@@ -1,0 +1,15 @@
+{
+    "files.watcherExclude": {
+        "**/.git/**": true,
+        "**/.venv/**": true,
+        "**/__pycache__/**": true,
+        "**/logs/**": true,
+        "**/data/raw/**": true
+    },
+    "search.exclude": {
+        "**/.venv": true,
+        "**/__pycache__": true,
+        "**/logs": true,
+        "**/data/raw": true
+    }
+}
