@@ -192,3 +192,30 @@ fastorder/db/  → connection.py, init_db.py
 - Bounded mode bảo đảm có test data phục vụ quá trình test nhanh, trong khi Continuous mode mô phỏng operational traffic dài hạn.
 - Nguyên tắc Fail-fast giúp phát hiện ngay lỗi Database/Logic thay vì chạy lặp vô hạn. Graceful shutdown ngăn chặn treo transaction.
 - Independent validator chốt chặn chất lượng dữ liệu cuối phiên đảm bảo dữ liệu sinh ra không vi phạm Data Invariants (12/12 rules PASS).
+
+## D-017 — At-Least-Once Bronze Ingestion & Timestamp-based Extraction
+
+**Date:** 05/08/2026
+**Decision:**
+*   Sử dụng Timestamp-based Incremental Extraction thay vì WAL-based CDC (Debezium/Kafka) cho giai đoạn MVP.
+*   Chốt Watermark theo cơ chế Composite Key: `(updated_at, order_id)`.
+*   Chấp nhận Delivery Semantics là **At-least-once** từ PostgreSQL xuống Bronze. 
+*   Việc khử trùng lặp (Deduplication) sẽ được thực hiện ở lớp Silver.
+
+**Reason:**
+*   Hệ thống file local không hỗ trợ distributed transaction. Việc giả lập Exactly-once delivery ở bước này là quá rườm rà và dễ phát sinh lỗi (error-prone). 
+*   Medallion Architecture sinh ra là để các lớp san sẻ gánh nặng cho nhau. Bronze có nhiệm vụ lấy dữ liệu nhanh nhất và an toàn nhất (append-only), còn Silver xử lý logic nghiệp vụ (Deduplicate).
+*   Upper Watermark giúp cô lập batch dữ liệu, tránh việc query đuổi theo dữ liệu do Simulator sinh ra liên tục.
+
+## D-018 — Timestamp Honesty & Schema Enforcement for Incremental Extraction
+
+**Date:** 05/08/2026
+**Decision:**
+*   Bảo tồn định dạng `TIMESTAMP WITHOUT TIME ZONE` cho checkpoint JSON (dạng naive ISO 8601, không gắn cờ `Z` UTC).
+*   Thực thi cứng ràng buộc `NOT NULL` cho cột `updated_at` trong database.
+*   Thiết lập Composite Index `(updated_at, order_id)` trực tiếp trên schema.
+
+**Reason:**
+*   Ép múi giờ UTC trong code Python đối với một database không lưu múi giờ sẽ tạo ra metadata giả, gây lỗi lệch pha hệ thống (offset drift) về sau. Phải trung thực với schema nguồn.
+*   Giá trị `updated_at = NULL` sẽ vĩnh viễn lọt lưới Incremental Query, nên `NOT NULL` là lá chắn bắt buộc.
+*   Composite Index là thành phần vật lý không thể thiếu để duy trì hiệu năng khi query quét theo watermark ngày càng phình to.

@@ -86,3 +86,9 @@ Result:
 
 * **Trạng thái:** **ĐÃ TRIỂN KHAI**
 * **Xác thực:** Đã bootstrap lại toàn bộ database, initial loader chạy thành công với `DEFAULT 1`. Faker Simulator đã tích hợp và sinh giá trị ngẫu nhiên (1-10) thành công cho các đơn hàng mới.
+
+## 2026-08-05: Củng cố Incremental Source Contract cho bảng `orders`
+*   **Thay đổi 1:** `ALTER TABLE orders ALTER COLUMN updated_at SET NOT NULL;`
+    *   *Lý do:* Đảm bảo watermark không bao giờ bị rỗng, loại trừ rủi ro bỏ sót dữ liệu vĩnh viễn (missing records) khi trích xuất.
+*   **Thay đổi 2:** `CREATE INDEX IF NOT EXISTS idx_orders_updated_at_order_id ON orders (updated_at, order_id);`
+    *   *Lý do:* Tối ưu hóa hiệu năng cho các truy vấn Incremental pagination sử dụng composite watermark.

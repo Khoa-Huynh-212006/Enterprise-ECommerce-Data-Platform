@@ -75,17 +75,18 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 
 ## Current phase gate
 Không chuyển sang Airflow DAG cho đến khi hoàn thành:
-
-1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**[cite: 3]
-2. Kiểm tra orphan FK bằng SQL - **COMPLETE**[cite: 3]
-3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**[cite: 3]
-4. Warehouse design and seed - **COMPLETE**[cite: 3]
-5. Inventory design and seed - **COMPLETE**[cite: 3]
-6. Inventory validation - **COMPLETE**[cite: 3]
-7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**[cite: 3]
-8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**[cite: 3]
+1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**
+2. Kiểm tra orphan FK bằng SQL - **COMPLETE**
+3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**
+4. Warehouse design and seed - **COMPLETE**
+5. Inventory design and seed - **COMPLETE**
+6. Inventory validation - **COMPLETE**
+7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**
+8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**
 9. Mở rộng Simulator chạy Batch (Runner Bounded & Continuous mode) - **COMPLETE** 
-10. Thiết kế incremental ingestion từ PostgreSQL operational source - **NEXT**
+10. Chốt Orders Incremental Source Contract (Composite watermark, Not Null enforcement, Naive Timestamp format) - **COMPLETE**
+11. Xây dựng Checkpoint Manager (Atomic JSON File) - **NEXT**
+12. Xây dựng PostgreSQL Incremental Extractor (Python logic) - **PENDING**
 
 ## Trạng thái hiện tại (Tính đến 31/07/2026)
 

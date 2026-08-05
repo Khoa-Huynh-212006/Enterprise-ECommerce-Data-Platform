@@ -50,7 +50,7 @@ CREATE TABLE orders (
     order_delivered_customer_date TIMESTAMP,
     order_estimated_delivery_date TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     warehouse_id VARCHAR(50),
     source_system VARCHAR(50) DEFAULT 'olist_seed' NOT NULL,
     FOREIGN KEY (customer_id) REFERENCES customers(customer_id),
@@ -176,3 +176,4 @@ CREATE INDEX idx_warehouses_updated_at ON warehouses(updated_at);
 CREATE INDEX idx_inventory_updated_at ON inventory(updated_at);
 CREATE INDEX idx_product_category_name_translation_updated_at ON product_category_name_translation(updated_at);
 CREATE INDEX idx_geolocation_updated_at ON geolocation(updated_at);
+CREATE INDEX IF NOT EXISTS idx_orders_updated_at_order_id ON orders (updated_at, order_id);
