@@ -177,3 +177,18 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:** 
 - Đảm bảo tính chân thực của dữ liệu mô phỏng.
 - Kỹ thuật Optimistic Locking (kiểm tra rowcount) khóa chặt lỗ hổng Overselling khi chạy nhiều tiến trình Simulator song song, nếu có tranh chấp tài nguyên (race condition), transaction sẽ lập tức Rollback.
+
+## D-016 — Architecture of Simulator Runner
+
+**Date:** 01/08/2026  
+**Decision:** 
+- Triển khai Simulator Runner hỗ trợ chạy hữu hạn (Bounded) hoặc liên tục (Continuous).
+- Mỗi cycle tạo 0-3 orders và gọi status updater.
+- Áp dụng nguyên tắc Fail-fast, không che giấu exception.
+- Hỗ trợ graceful shutdown bằng Ctrl+C.
+- Chạy independent validator ở cuối phiên.
+
+**Reason:** 
+- Bounded mode bảo đảm có test data phục vụ quá trình test nhanh, trong khi Continuous mode mô phỏng operational traffic dài hạn.
+- Nguyên tắc Fail-fast giúp phát hiện ngay lỗi Database/Logic thay vì chạy lặp vô hạn. Graceful shutdown ngăn chặn treo transaction.
+- Independent validator chốt chặn chất lượng dữ liệu cuối phiên đảm bảo dữ liệu sinh ra không vi phạm Data Invariants (12/12 rules PASS).

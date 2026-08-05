@@ -334,19 +334,26 @@ order_reviews
 - Vượt qua toàn bộ 12 rules kiểm tra Data Invariants (Completeness, Consistency, Boundaries, Temporal & State Logic).
 - Smoke tests `ADVANCE_ORDER_STATUS` và `SIMULATOR_VALIDATION`: **PASS**.
 
-## Trạng thái chốt ngày 29/07/2026
 
-```text
-Business & architecture docs       COMPLETE
-Docker/Airflow local infrastructure COMPLETE
-FastOrder PostgreSQL               COMPLETE
-Schema-first database              COMPLETE
-SQLAlchemy connection layer        COMPLETE
-Database bootstrap                 COMPLETE
-Initial Olist load                 COMPLETE
-Post-load validation               COMPLETE
-Faker simulator                    NOT STARTED
-Airflow incremental ingestion      NOT STARTED
-Bronze/Silver/Gold                 NOT STARTED
-Power BI                           NOT STARTED
-```
+## Mốc 13 — Hoàn thiện Simulator Runner (Bounded & Continuous)
+
+### 01/08/2026
+
+**Mục tiêu**
+
+- Hoàn thiện simulator runner hỗ trợ bounded và continuous mode để tự động hóa luồng sinh dữ liệu.
+
+**Đã thực hiện**
+
+- Hỗ trợ chạy hữu hạn hoặc liên tục.
+- Tạo 0–3 orders mỗi cycle.
+- Gọi status updater mỗi cycle.
+- Tổng hợp cycle/session metrics.
+- Hỗ trợ graceful shutdown bằng Ctrl+C.
+- Chạy independent validator sau khi kết thúc.
+- Smoke test continuous mode thành công.
+- 12/12 validation rules PASS trên 15 simulated orders.
+
+**Kết quả**
+
+- Simulator operational workflow COMPLETE.

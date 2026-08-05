@@ -65,31 +65,27 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 
 ## Current limitations
 
-- `warehouses` và `inventory` chưa được seed dữ liệu nghiệp vụ.
--> **Đã xử lý một phần:** Đã chốt danh sách 5 warehouse chiến lược và cập nhật schema `warehouses` theo vùng miền (NORTH, CENTRAL, SOUTH). Bảng `inventory` chuẩn bị được seed.
-- Olist orders/order_items có thể chưa được gán `warehouse_id`.
-- `updated_at` có default khi INSERT nhưng không tự đổi khi UPDATE; simulator phải cập nhật rõ ràng hoặc bổ sung trigger sau này.
+- Olist orders/order_items có thể chưa được gán `warehouse_id`[cite: 3].
+- `updated_at` có default khi INSERT nhưng không tự đổi khi UPDATE; simulator phải cập nhật rõ ràng hoặc bổ sung trigger sau này[cite: 3].
 - Initial loader không idempotent:
-  - Chạy lần hai với `append` sẽ gặp duplicate PK.
-  - Muốn chạy lại phải reset schema trước.
-- Chưa có Faker simulator.
-- Chưa có Airflow incremental DAG.
-- Chưa có Bronze/Silver/Gold implementation.
+  - Chạy lần hai với `append` sẽ gặp duplicate PK[cite: 3].
+  - Muốn chạy lại phải reset schema trước[cite: 3].
+- Chưa có Airflow incremental DAG[cite: 3].
+- Chưa có Bronze/Silver/Gold implementation[cite: 3].
 
 ## Current phase gate
-
 Không chuyển sang Airflow DAG cho đến khi hoàn thành:
 
-1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**
-2. Kiểm tra orphan FK bằng SQL - **COMPLETE**
-3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**
-4. Warehouse design and seed - **COMPLETE**
-5. Inventory design and seed - **COMPLETE**
-6. Inventory validation - **COMPLETE**
-7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**
-8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**
-9. Mở rộng Simulator chạy Batch (Nhiều đơn hàng) - **NEXT**
-
+1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**[cite: 3]
+2. Kiểm tra orphan FK bằng SQL - **COMPLETE**[cite: 3]
+3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**[cite: 3]
+4. Warehouse design and seed - **COMPLETE**[cite: 3]
+5. Inventory design and seed - **COMPLETE**[cite: 3]
+6. Inventory validation - **COMPLETE**[cite: 3]
+7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**[cite: 3]
+8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**[cite: 3]
+9. Mở rộng Simulator chạy Batch (Runner Bounded & Continuous mode) - **COMPLETE** 
+10. Thiết kế incremental ingestion từ PostgreSQL operational source - **NEXT**
 
 ## Trạng thái hiện tại (Tính đến 31/07/2026)
 

@@ -23,3 +23,14 @@ Mọi trạng thái khi cập nhật bắt buộc phải tuân thủ sự hiện
 | `approved` / `processing`| **CÓ** | NULL | NULL |
 | `shipped` | **CÓ** | **CÓ** | NULL |
 | `delivered` | **CÓ** | **CÓ** | **CÓ** |
+
+## 3. Simulator Operational Workflow (Milestone: 2026-08-01)
+
+Hệ thống Simulator Runner điều phối luồng trạng thái hoạt động với các đặc tính sau:
+*   **Chế độ chạy:** Hỗ trợ chạy hữu hạn (Bounded mode) hoặc liên tục (Continuous mode).
+*   **Khởi tạo:** Tạo ngẫu nhiên 0–3 orders mỗi cycle.
+*   **Luân chuyển:** Gọi hàm `order_status_updater` mỗi cycle để tịnh tiến trạng thái đơn hàng.
+*   **Observability:** Tổng hợp cycle/session metrics.
+*   **An toàn:** Hỗ trợ graceful shutdown bằng Ctrl+C (dừng lịch sự, không treo Database).
+*   **Kiểm định:** Chạy independent validator ngay sau khi kết thúc chuỗi mô phỏng.
+*   **Trạng thái kiểm thử:** Smoke test continuous mode thành công. 12/12 validation rules PASS trên 15 simulated orders.
