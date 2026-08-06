@@ -44,3 +44,10 @@ Hệ thống Ingestion được thiết kế theo nguyên tắc Single Responsib
 *   **Orders Extractor:** Chỉ chịu trách nhiệm giao tiếp với PostgreSQL. Nhận lower watermark từ checkpoint, tự động chụp upper watermark tại thời điểm bắt đầu chạy, đọc các batch dữ liệu trong khoảng `lower < row <= upper` và trả về kết quả (Tuyệt đối không tự ghi file storage).
 *   **Bronze Writer:** Chỉ làm nhiệm vụ tiếp nhận dữ liệu dictionary từ Extractor và serialize thành định dạng Parquet an toàn tại tầng Bronze.
 *   **Incremental Runner:** Đóng vai trò Orchestrator mỏng, kết nối 3 thành phần trên theo đúng trình tự và quản lý việc sinh Run Manifest.
+
+## 6. Delivery Semantics & Retry Context
+*   **PostgreSQL → Bronze (At-least-once with Idempotent Overwrite):** 
+    *   Nếu một tiến trình trích xuất thất bại (ví dụ: lỗi mạng, sập nguồn) trước khi cập nhật Checkpoint, Runner sẽ đọc lại cùng một batch dữ liệu ở lần chạy tiếp theo.
+    *   **Retry Context:** Runner áp dụng cơ chế *Idempotent Overwrite* bằng cách tái sử dụng `extraction_id` (ví dụ: dựa trên timestamp cửa sổ chạy hoặc Airflow Run ID). 
+    *   Khi ghi xuống đĩa, `Bronze Writer` sinh file `.tmp` mới và dùng `os.replace` đè lên file Parquet rác của lần chạy lỗi trước đó. Điều này giúp ngăn chặn tình trạng phình to Data Lake (storage bloat) do các file rác bị bỏ quên.
+*   **Bronze → Silver:** Lớp Silver chịu trách nhiệm hoàn toàn việc Deduplicate dữ liệu giữa các batch khác nhau bằng composite key `(order_id, updated_at)`.

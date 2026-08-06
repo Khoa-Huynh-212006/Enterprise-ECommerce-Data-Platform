@@ -1,7 +1,7 @@
 # Current Project Status
 
-**As of:** 29/07/2026  
-**Current phase:** Operational Database Bootstrap completed.
+**As of:** 06/08/2026
+**Current phase:** Bronze Writer COMPLETE.
 
 ## Executive summary
 
@@ -89,6 +89,5 @@ Không chuyển sang Airflow DAG cho đến khi hoàn thành:
 10. Chốt Orders Incremental Source Contract (Composite watermark, Not Null enforcement) - **COMPLETE**
 11. Xây dựng Checkpoint Manager (Atomic JSON File) - **COMPLETE**
 12. Design and implement Orders Incremental Extractor - **COMPLETE**
-13. Xây dựng Bronze Parquet Writer và Incremental Runner - **NEXT**
-
-
+13. Xây dựng Bronze Parquet Writer (Idempotent atomic write, Metadata injection) - **COMPLETE**
+14. Thiết kế Incremental Runner (Orchestrator kết nối Extractor, Writer và Checkpoint) - **NEXT**

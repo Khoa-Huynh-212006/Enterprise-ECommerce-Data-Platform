@@ -400,3 +400,25 @@ order_reviews
 **Kết quả**
 
 - Orders Incremental Extractor: Prototype COMPLETE.
+
+## Mốc 16 — Thiết kế và triển khai Bronze Parquet Writer
+
+### 06/08/2026
+
+**Mục tiêu**
+
+- Build an isolated module to serialize extraction records to Parquet with safe atomic replacement and strict metadata injection.
+
+**Đã thực hiện**
+
+- Input validation rules (empty batch prevention, datetime assertions).
+- `updated_at` NULL checking to secure the composite watermark integrity.
+- Injection of lineage metadata (`_ingestion_id`, `_ingested_at`, `_source_table`, `_source_updated_at`, `_ingestion_method`).
+- Idempotent partition path generation (`ingestion_date`, `extraction_id`).
+- PyArrow engine integration for optimized Parquet serialization.
+- Corrected atomic file replacement suffix logic (`.parquet.tmp`).
+- Comprehensive smoke testing with Pandas dataframe assertions (Row count, Disjoint checking, Metadata fidelity).
+
+**Kết quả**
+
+- Bronze Writer: Prototype COMPLETE.

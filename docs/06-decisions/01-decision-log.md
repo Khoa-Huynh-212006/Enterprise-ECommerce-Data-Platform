@@ -219,3 +219,15 @@ fastorder/db/  → connection.py, init_db.py
 *   Ép múi giờ UTC trong code Python đối với một database không lưu múi giờ sẽ tạo ra metadata giả, gây lỗi lệch pha hệ thống (offset drift) về sau. Phải trung thực với schema nguồn.
 *   Giá trị `updated_at = NULL` sẽ vĩnh viễn lọt lưới Incremental Query, nên `NOT NULL` là lá chắn bắt buộc.
 *   Composite Index là thành phần vật lý không thể thiếu để duy trì hiệu năng khi query quét theo watermark ngày càng phình to.
+
+## D-019 — Idempotent Overwrite for Bronze Layer (Extraction ID Reuse)
+
+**Date:** 06/08/2026
+**Decision:**
+*   Lựa chọn Phương án B (Idempotent Semantics) cho kiến trúc ghi file tại tầng Bronze. 
+*   Quá trình retry (chạy lại do lỗi) sẽ dùng lại cùng một `extraction_id` cho cùng một lô công việc.
+*   Thực hiện ghi đè an toàn thông qua hàm `os.replace()` (Atomic Replace).
+
+**Reason:**
+*   Ngăn chặn sự tích tụ của các thư mục/file Parquet rác trong Data Lake khi tiến trình crash giữa bước "Ghi Parquet" và "Commit Checkpoint". 
+*   Dù tầng Silver có năng lực Deduplicate, việc giữ sạch tầng vật lý Bronze ngay từ đầu (giảm thiểu số lượng file trùng lặp) là tiêu chuẩn công nghiệp tốt nhất, giúp giảm tải IO và tránh phải xây dựng các kịch bản dọn rác (Garbage Collection/Vacuum) phức tạp.
