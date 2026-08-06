@@ -1,11 +1,11 @@
 from pathlib import Path
 from datetime import datetime
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from sqlalchemy import Connection
 
 from fastorder.ingestion.incremental.orders_extractor import extract_orders_batch
 from fastorder.ingestion.incremental.bronze_writer import write_bronze_batch
-from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_atomic
+from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_atomic, load_checkpoint
 
 def process_one_orders_batch(
         conn: Connection,
@@ -18,7 +18,6 @@ def process_one_orders_batch(
         ingested_at: datetime
 ) -> Dict[str, Any]:
     
-    # 1. Trích xuất
     batch_records, next_watermark = extract_orders_batch(
         lower_watermark=lower_watermark,
         upper_watermark=run_upper_watermark,
@@ -33,7 +32,6 @@ def process_one_orders_batch(
             "checkpoint_updated": False
         }
 
-    # 2. Ghi Bronze Parquet
     output_path = write_bronze_batch(
         records=batch_records,
         bronze_root=bronze_root,
@@ -42,7 +40,6 @@ def process_one_orders_batch(
         ingested_at=ingested_at
     )
 
-    # 3. Ghi Checkpoint
     new_checkpoint = {
         "version": 1,
         "table_name": "orders",
@@ -55,7 +52,6 @@ def process_one_orders_batch(
         expected_table_name="orders"
     )
 
-    # 4. Trả về hợp đồng chuẩn xác
     return {
         "status": "batch_committed",
         "records_written": len(batch_records),
@@ -64,126 +60,212 @@ def process_one_orders_batch(
         "checkpoint_updated": True
     }
 
+
+def run_orders_incremental_ingestion(
+    conn: Connection,
+    bronze_root: Path,
+    checkpoint_path: Path,
+    batch_size: int,
+    run_id: str,
+    run_started_at: datetime,
+    run_upper_watermark: Optional[Dict[str, str]] = None
+) -> Dict[str, Any]:
+    
+    # 1. Validate Input (Chặn bool vì isinstance(True, int) == True)
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or batch_size <= 0
+    ):
+        raise ValueError("batch_size phải là số nguyên > 0.")
+        
+    if not run_id:
+        raise ValueError("run_id không được để trống.")
+    if not isinstance(run_started_at, datetime):
+        raise ValueError("run_started_at phải là datetime object.")
+
+    # 2. Khởi tạo mốc chạy
+    checkpoint = load_checkpoint(checkpoint_path, "orders")
+    current_lower = checkpoint["watermark"]
+
+    # 3. Chụp Upper Watermark (1 lần duy nhất)
+    from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
+    if run_upper_watermark is None:
+        run_upper_watermark = get_upper_watermark(conn)
+
+    if not run_upper_watermark:
+        return {
+            "status": "source_empty",
+            "run_id": run_id,
+            "batches_committed": 0,
+            "records_written": 0,
+            "final_watermark": current_lower,
+            "output_paths": []
+        }
+
+    def _wm_key(wm: Dict[str, str]):
+        return (wm["updated_at"], wm["order_id"])
+
+    curr_key = _wm_key(current_lower)
+    upper_key = _wm_key(run_upper_watermark)
+
+    if curr_key == upper_key:
+        return {
+            "status": "no_new_data",
+            "run_id": run_id,
+            "batches_committed": 0,
+            "records_written": 0,
+            "final_watermark": current_lower,
+            "output_paths": []
+        }
+        
+    if curr_key > upper_key:
+        raise RuntimeError(
+            f"Trạng thái không hợp lệ: Lower watermark ({current_lower}) "
+            f"lớn hơn Upper watermark ({run_upper_watermark})."
+        )
+
+    batch_number = 1
+    total_records = 0
+    output_paths = []
+
+    # 4. Vòng lặp Multi-batch
+    while curr_key < upper_key:
+        extraction_id = f"{run_id}_batch_{batch_number:06d}"
+        
+        result = process_one_orders_batch(
+            conn=conn,
+            lower_watermark=current_lower,
+            run_upper_watermark=run_upper_watermark,
+            batch_size=batch_size,
+            bronze_root=bronze_root,
+            checkpoint_path=checkpoint_path,
+            extraction_id=extraction_id,
+            ingested_at=run_started_at
+        )
+
+        # Chặn lỗi Logic: Chưa chạm Upper mà đã hết dữ liệu
+        if result["status"] == "completed":
+            raise RuntimeError(
+                "Extractor trả về batch rỗng dù current watermark "
+                "vẫn nhỏ hơn run upper watermark. (Lỗi Data Anomaly)"
+            )
+            
+        next_watermark = result["next_watermark"]
+        next_key = _wm_key(next_watermark)
+
+        if next_key <= curr_key:
+            raise RuntimeError(
+                f"Runner không tiến lên! Next watermark ({next_watermark}) "
+                f"không lớn hơn Lower watermark hiện tại ({current_lower})."
+            )
+
+        current_lower = next_watermark
+        curr_key = next_key
+        
+        total_records += result["records_written"]
+        output_paths.append(result["output_path"])
+        batch_number += 1
+
+    return {
+        "status": "run_completed",
+        "run_id": run_id,
+        "run_upper_watermark": run_upper_watermark,
+        "final_watermark": current_lower,
+        "batches_committed": batch_number - 1,
+        "records_written": total_records,
+        "output_paths": output_paths
+    }
+
+
 if __name__ == "__main__":
     import shutil
     import pandas as pd
-    from unittest.mock import patch
     from fastorder.db.connection import get_engine
     from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
-    from fastorder.ingestion.incremental.checkpoint_manager import load_checkpoint
 
-    test_bronze_root = Path("test_bronze_data")
-    test_checkpoint_path = Path("test_runner_checkpoint.json")
+    print("Bắt đầu Smoke Test: Multi-Batch Runner (12 Records)\n" + "-"*50)
 
-    if test_bronze_root.exists(): 
-        shutil.rmtree(test_bronze_root)
-    if test_checkpoint_path.exists(): 
-        test_checkpoint_path.unlink()
+    test_bronze_root = Path("test_bronze_multibatch")
+    test_checkpoint_path = Path("test_multi_checkpoint.json")
+
+    if test_bronze_root.exists(): shutil.rmtree(test_bronze_root)
+    if test_checkpoint_path.exists(): test_checkpoint_path.unlink()
 
     engine = get_engine()
 
-    try: 
+    try:
         with engine.connect() as conn:
-            upper_wm = get_upper_watermark(conn)
-            if not upper_wm:
-                raise RuntimeError("Smoke test thất bại: bảng orders không có dữ liệu.")
-
-            # TEST 1: HAPPY PATH
-            print("Bắt đầu Smoke Test 1: Incremental Runner (Happy Path)\n" + "-"*50)
+            full_upper = get_upper_watermark(conn)
+            if not full_upper:
+                raise RuntimeError("Bảng rỗng, không đủ dữ liệu để test!")
+                
+            initial_lower_wm = {"updated_at": "1970-01-01T00:00:00.000000", "order_id": ""}
             
-            initial_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
-            lower_wm = initial_checkpoint["watermark"]
-
-            print(f"-> Lower WM ban đầu: {lower_wm}")
-            print(f"-> Upper WM ghi nhận: {upper_wm}")
-            print("\nĐang xử lý 1 batch 5 records...")
-            
-            result = process_one_orders_batch(
+            twelve_records, test_upper = extract_orders_batch(
                 conn=conn,
-                lower_watermark=lower_wm,
-                run_upper_watermark=upper_wm,
-                batch_size=5,
+                lower_watermark=initial_lower_wm,
+                upper_watermark=full_upper,
+                batch_size=12
+            )
+            
+            # Kiểm tra gắt gao: Bắt buộc phải có đúng 12 records
+            if len(twelve_records) != 12:
+                raise RuntimeError(
+                    f"Smoke test cần đúng 12 records, "
+                    f"nhưng extractor chỉ trả về {len(twelve_records)}."
+                )
+            
+            print(f"-> Tạo thành công biên ảo tại record thứ 12: {test_upper}")
+
+            print("\nChạy Incremental Runner (Batch_size = 5, Max 12 records)...")
+            run_result = run_orders_incremental_ingestion(
+                conn=conn,
                 bronze_root=test_bronze_root,
                 checkpoint_path=test_checkpoint_path,
-                extraction_id="run_batch_happy",
-                ingested_at=datetime.now()
+                batch_size=5,
+                run_id="test_multi_run_2026",
+                run_started_at=datetime.now(),
+                run_upper_watermark=test_upper
             )
 
-            if result["status"] == "completed":
-                print("Không có record nào để xử lý. Batch đã hoàn tất.")
-            else:
-                print("Xử lý thành công!")
-                # Invariant 1
-                saved_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
-                assert saved_checkpoint["watermark"] == result["next_watermark"], \
-                    "LỖI: Checkpoint lưu dưới đĩa không khớp với kết quả trả về!"
-                print("   Assert 1: Checkpoint dưới đĩa khớp với Next Watermark.")
-
-                # Invariant 2
-                written_df = pd.read_parquet(result["output_path"])
-                last_row = written_df.iloc[-1]
-                last_row_updated_at_str = last_row["updated_at"].strftime("%Y-%m-%dT%H:%M:%S.%f")
-                assert saved_checkpoint["watermark"] == {
-                    "updated_at": last_row_updated_at_str,
-                    "order_id": last_row["order_id"]
-                }, "LỖI: Checkpoint không khớp với dòng cuối của file Parquet!"
-                print("   Assert 2: Checkpoint trỏ chính xác vào dòng cuối của file Parquet.")
-
-            # TEST 2: FAILURE ORDERING (Giả lập Lỗi Writer)
-            print("\nBắt đầu Smoke Test 2: Failure Ordering\n" + "-"*50)
+            print(f"\nSummary: {run_result['status']} | Batches: {run_result['batches_committed']} | Rows: {run_result['records_written']}")
             
-            # Reset lại toàn bộ môi trường để test lỗi một cách tinh khiết nhất
-            if test_bronze_root.exists(): shutil.rmtree(test_bronze_root)
-            if test_checkpoint_path.exists(): test_checkpoint_path.unlink()
+            # Assert 1: Thống kê cơ bản
+            assert run_result["status"] == "run_completed", "Trạng thái run bị sai."
+            assert run_result["records_written"] == 12, "Tổng số records không bằng 12."
+            assert run_result["batches_committed"] == 3, "Phải chia thành 3 batches."
+            assert len(run_result["output_paths"]) == 3, "Phải có 3 file output."
+            print("   Assert 1: Thống kê cơ bản chuẩn xác.")
 
-            # Khởi tạo lại checkpoint gốc
-            initial_fail_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
-            lower_wm_fail = initial_fail_checkpoint["watermark"]
-            print(f"-> Lower WM ban đầu (trước khi lỗi): {lower_wm_fail}")
+            # Assert 2: Cấu trúc 5-5-2
+            batch_row_counts = [len(pd.read_parquet(path)) for path in run_result["output_paths"]]
+            assert batch_row_counts == [5, 5, 2], f"Kích thước batch không đúng: {batch_row_counts}"
+            print("   Assert 2: Kích thước từng batch chia đúng tỷ lệ 5-5-2.")
 
-            # Dùng mock.patch để chặn họng hàm write_bronze_batch bên trong incremental_runner
-            patcher = patch("__main__.write_bronze_batch")
-            mock_writer = patcher.start()
-            # Ép hàm này quăng lỗi khi bị gọi
-            mock_writer.side_effect = RuntimeError("Simulated Bronze failure")
+            # Assert 3: Chống trùng / Mất record bằng Order ID
+            output_order_ids = []
+            for path in run_result["output_paths"]:
+                batch_df = pd.read_parquet(path)
+                output_order_ids.extend(batch_df["order_id"].tolist())
 
-            print("Đang xử lý 1 batch nhưng Writer sẽ bị ném lỗi giữa chừng...")
-            error_caught = False
-            try:
-                process_one_orders_batch(
-                    conn=conn,
-                    lower_watermark=lower_wm_fail,
-                    run_upper_watermark=upper_wm,
-                    batch_size=5,
-                    bronze_root=test_bronze_root,
-                    checkpoint_path=test_checkpoint_path,
-                    extraction_id="run_batch_fail",
-                    ingested_at=datetime.now()
-                )
-            except RuntimeError as e:
-                error_caught = True
-                assert str(e) == "Simulated Bronze failure", "Lỗi ném ra không đúng như giả lập!"
-                print("   Assert 3: Lỗi đã được truyền ra ngoài (Bubbled up) thành công.")
+            expected_order_ids = [record["order_id"] for record in twelve_records]
+            assert output_order_ids == expected_order_ids, "Dữ liệu nhiều batch bị mất, trùng hoặc sai thứ tự."
+            print("   Assert 3: Trình tự Order ID bảo toàn tuyệt đối xuyên suốt các file Parquet.")
 
-            # Dừng mock
-            patcher.stop()
-
-            assert error_caught, "LỖI: Hàm không raise exception như kỳ vọng!"
-
-            # Đảm bảo Checkpoint KHÔNG đổi
-            checkpoint_after_failure = load_checkpoint(test_checkpoint_path, "orders")
-            assert checkpoint_after_failure["watermark"] == lower_wm_fail, \
-                "LỖI: Checkpoint bị tiến lên dù Writer thất bại! At-least-once semantics đã bị phá vỡ!"
-            print("   Assert 4: Checkpoint được bảo toàn (Giữ nguyên mốc ban đầu).")
-
-            # Đảm bảo không có rác (Parquet hay Tmp)
-            parquet_files = list(test_bronze_root.rglob("*.parquet"))
-            tmp_files = list(test_bronze_root.rglob("*.tmp"))
-            assert not parquet_files, f"LỖI: File Parquet vẫn được tạo ra: {parquet_files}"
-            assert not tmp_files, f"LỖI: File .tmp bị rò rỉ: {tmp_files}"
-            print("   Assert 5: Không có bất kỳ file Parquet hay .tmp rác nào được sinh ra.")
-
+            # Assert 4: Checkpoint
+            saved_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
+            assert saved_checkpoint["watermark"] == test_upper, "Checkpoint đĩa không khớp Test Upper."
+            assert run_result["final_watermark"] == test_upper, "Final Watermark bộ nhớ không khớp Test Upper."
+            print("   Assert 4: Checkpoint cuối chạm đúng Upper Watermark.")
+            
+            # Assert 5: File rác
+            assert not list(test_bronze_root.rglob("*.tmp")), "File rác .tmp bị rò rỉ!"
+            print("   Assert 5: Tuyệt đối không rò rỉ file .tmp.")
+            
     finally:
-        if test_bronze_root.exists(): shutil.rmtree(test_bronze_root)
-        if test_checkpoint_path.exists(): test_checkpoint_path.unlink()
+        if test_bronze_root.exists(): 
+            shutil.rmtree(test_bronze_root)
+        if test_checkpoint_path.exists(): 
+            test_checkpoint_path.unlink()
         print("\nHoàn tất dọn dẹp file test.")
