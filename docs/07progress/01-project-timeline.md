@@ -357,3 +357,46 @@ order_reviews
 **Kết quả**
 
 - Simulator operational workflow COMPLETE.
+
+## Mốc 14 — Thiết kế và triển khai Checkpoint Manager
+
+### 05/08/2026
+
+**Mục tiêu**
+
+- Implement local checkpoint management for timestamp-based incremental ingestion.
+
+**Đã thực hiện**
+
+- Initial checkpoint construction.
+- Checkpoint contract validation.
+- Safe handling of missing and corrupted checkpoint files.
+- Atomic checkpoint replacement using temporary file, fsync and os.replace.
+- Six checkpoint smoke-test scenarios completed.
+
+**Kết quả**
+
+- Checkpoint Manager: COMPLETE.
+
+---
+
+## Mốc 15 — Thiết kế và triển khai Orders Incremental Extractor
+
+### 06/08/2026
+
+**Mục tiêu**
+
+- Design and implement Orders Incremental Extractor with bounded lower and upper composite watermarks.
+
+**Đã thực hiện**
+
+- Explicit schema contract via `SELECT` column list thay vì `SELECT *`.
+- Python-side timestamp parsing và validation với `TIMESTAMP_FORMAT`.
+- Upper watermark freezing để đóng băng biên trích xuất (prevent moving-target).
+- Composite watermark bounds comparison bảo vệ logic `lower_position > upper_position`.
+- Pagination handling sử dụng composite ties (`updated_at`, `order_id`).
+- Smoke test với Data Quality Assertions (disjoint batches, monotonically increasing).
+
+**Kết quả**
+
+- Orders Incremental Extractor: Prototype COMPLETE.

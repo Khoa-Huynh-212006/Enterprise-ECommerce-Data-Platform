@@ -23,6 +23,7 @@ File JSON lưu vết trạng thái commit an toàn:
     "order_id": ""
   }
 }
+```
 
 ## 3. Extraction Boundaries (Giới hạn trích xuất)
 Để ngăn ngừa tình trạng trích xuất chạy theo "mục tiêu di động" (dữ liệu source sinh mới liên tục khi đang chạy), mỗi lượt chạy (Extraction Run) phải được "đóng băng":
@@ -33,3 +34,13 @@ File JSON lưu vết trạng thái commit an toàn:
 ## 4. Checkpoint & Manifest Architecture
 *   **State Control (Checkpoint):** File JSON lưu vết watermark `updated_at` và `order_id` cuối cùng. Ghi file theo nguyên tắc Atomic (Ghi file `.tmp` -> Đổi tên đè file `.json`) để chống hỏng file khi crash.
 *   **Observability (Manifest):** File JSON đi kèm mỗi Batch Parquet, lưu trữ metadata (row_count, started_at, completed_at) phục vụ audit.
+
+
+## 5. Architectural Boundaries (Phân tách trách nhiệm)
+
+Hệ thống Ingestion được thiết kế theo nguyên tắc Single Responsibility để đảm bảo tính module hóa cao nhất:
+
+*   **Checkpoint Manager:** Chỉ quản lý trạng thái đã commit (committed position). Đảm bảo tính toàn vẹn của Watermark thông qua cơ chế Atomic Write (`os.replace`, `fsync`).
+*   **Orders Extractor:** Chỉ chịu trách nhiệm giao tiếp với PostgreSQL. Nhận lower watermark từ checkpoint, tự động chụp upper watermark tại thời điểm bắt đầu chạy, đọc các batch dữ liệu trong khoảng `lower < row <= upper` và trả về kết quả (Tuyệt đối không tự ghi file storage).
+*   **Bronze Writer:** Chỉ làm nhiệm vụ tiếp nhận dữ liệu dictionary từ Extractor và serialize thành định dạng Parquet an toàn tại tầng Bronze.
+*   **Incremental Runner:** Đóng vai trò Orchestrator mỏng, kết nối 3 thành phần trên theo đúng trình tự và quản lý việc sinh Run Manifest.

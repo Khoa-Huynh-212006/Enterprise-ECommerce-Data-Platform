@@ -74,7 +74,9 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 - Chưa có Bronze/Silver/Gold implementation[cite: 3].
 
 ## Current phase gate
+
 Không chuyển sang Airflow DAG cho đến khi hoàn thành:
+
 1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**
 2. Kiểm tra orphan FK bằng SQL - **COMPLETE**
 3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**
@@ -84,14 +86,9 @@ Không chuyển sang Airflow DAG cho đến khi hoàn thành:
 7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**
 8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**
 9. Mở rộng Simulator chạy Batch (Runner Bounded & Continuous mode) - **COMPLETE** 
-10. Chốt Orders Incremental Source Contract (Composite watermark, Not Null enforcement, Naive Timestamp format) - **COMPLETE**
-11. Xây dựng Checkpoint Manager (Atomic JSON File) - **NEXT**
-12. Xây dựng PostgreSQL Incremental Extractor (Python logic) - **PENDING**
+10. Chốt Orders Incremental Source Contract (Composite watermark, Not Null enforcement) - **COMPLETE**
+11. Xây dựng Checkpoint Manager (Atomic JSON File) - **COMPLETE**
+12. Design and implement Orders Incremental Extractor - **COMPLETE**
+13. Xây dựng Bronze Parquet Writer và Incremental Runner - **NEXT**
 
-## Trạng thái hiện tại (Tính đến 31/07/2026)
-
-*   **Giai đoạn:** Data Quality & Validation (Hoàn tất).
-*   **Tình trạng hệ thống:** Cỗ máy Simulator (gồm Generator và Updater) đã hoạt động trơn tru, sinh dữ liệu chuẩn xác về mặt tài chính (Reconciliation), không gian (Kho bãi) và logic thời gian vật lý (Time-series).
-*   **Thành tựu cốt lõi:** Chốt chặt 12 quy tắc Data Invariants thông qua phương pháp Negative Testing bằng SQL, đảm bảo không có rác dữ liệu hay nghịch lý thời gian trong quá trình giả lập.
-*   **Mục tiêu tiếp theo:** Chuẩn bị hạ tầng để đưa dòng dữ liệu giả lập này chảy vào các hệ thống Data Pipeline thực thụ (như Kafka, Airflow, hoặc Data Warehouse).
 

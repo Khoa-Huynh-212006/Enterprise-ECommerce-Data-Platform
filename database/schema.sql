@@ -49,7 +49,7 @@ CREATE TABLE orders (
     order_delivered_carrier_date TIMESTAMP,
     order_delivered_customer_date TIMESTAMP,
     order_estimated_delivery_date TIMESTAMP,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     warehouse_id VARCHAR(50),
     source_system VARCHAR(50) DEFAULT 'olist_seed' NOT NULL,
