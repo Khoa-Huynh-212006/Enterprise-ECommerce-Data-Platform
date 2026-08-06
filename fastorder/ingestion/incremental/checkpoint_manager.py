@@ -129,7 +129,7 @@ if __name__ == "__main__":
     test_file = Path("test_orders_checkpoint.json")
     write_test_file = Path("test_atomic_checkpoint.json")
 
-    print("Bắt đầu Smoke Test: Checkpoint Manager\n" + "-"*50)
+    print("Bắt đầu Smoke Test: Checkpoint Manager\n")
 
     try:
         # 1. Trường hợp 1: File chưa tồn tại
