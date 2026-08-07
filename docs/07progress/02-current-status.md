@@ -1,7 +1,7 @@
 # Current Project Status
 
-**As of:** 06/08/2026
-**Current phase:** Bronze Writer COMPLETE.
+**As of:** 07/08/2026
+**Current phase:** Incremental Runner & Crash Recovery COMPLETE.
 
 ## Executive summary
 
@@ -75,7 +75,8 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 
 ## Current phase gate
 
-Không chuyển sang Airflow DAG cho đến khi hoàn thành:
+Hệ thống Local Bronze Layer (PostgreSQL -> Parquet) đã hoàn thành toàn bộ cốt lõi. Sẵn sàng chuyển sang giai đoạn đóng gói Airflow Orchestration và chuyển đổi sang Azure Data Lake Storage (ADLS).
+
 
 1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**
 2. Kiểm tra orphan FK bằng SQL - **COMPLETE**
@@ -90,4 +91,11 @@ Không chuyển sang Airflow DAG cho đến khi hoàn thành:
 11. Xây dựng Checkpoint Manager (Atomic JSON File) - **COMPLETE**
 12. Design and implement Orders Incremental Extractor - **COMPLETE**
 13. Xây dựng Bronze Parquet Writer (Idempotent atomic write, Metadata injection) - **COMPLETE**
-14. Thiết kế Incremental Runner (Orchestrator kết nối Extractor, Writer và Checkpoint) - **NEXT**
+14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - **COMPLETE**
+Mục tiêu tiếp theo (Next Phase):
+15. Đưa Ingestion Runner lên Airflow DAG.
+16. Tích hợp ADLS Gen2 để thay thế Local Path.
+
+
+
+

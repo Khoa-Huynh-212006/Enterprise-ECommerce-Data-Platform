@@ -231,3 +231,14 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Ngăn chặn sự tích tụ của các thư mục/file Parquet rác trong Data Lake khi tiến trình crash giữa bước "Ghi Parquet" và "Commit Checkpoint". 
 *   Dù tầng Silver có năng lực Deduplicate, việc giữ sạch tầng vật lý Bronze ngay từ đầu (giảm thiểu số lượng file trùng lặp) là tiêu chuẩn công nghiệp tốt nhất, giúp giảm tải IO và tránh phải xây dựng các kịch bản dọn rác (Garbage Collection/Vacuum) phức tạp.
+
+## D-020 — Use Pending Batch Context for Stable Crash Recovery
+
+**Date:** 07/08/2026
+**Decision:**
+* Bổ sung cơ chế `Pending Batch Context` lưu dưới dạng JSON atomic để theo dõi trạng thái của batch đang chạy dở.
+* Kế thừa chặt chẽ `run_id`, `ingested_at`, `batch_size`, và ranh giới watermark (lower/batch_upper) từ Pending Context khi tiến hành phục hồi sau sự cố.
+
+**Reason:**
+* Checkpoint chỉ trả lời câu hỏi "Pipeline đã hoàn thành đến đâu?", nhưng không biết "Tiến trình đang làm dở việc gì?". 
+* Việc không có Pending Context sẽ khiến tiến trình khi restart bị mất `extraction_id` cũ, tự động sinh ID mới và ghi file Parquet mới, dẫn đến rác dữ liệu trên Data Lake hoặc ghi đè sai batch. Pending Context đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) được bảo toàn tuyệt đối xuyên suốt các lần khởi động lại tiến trình.

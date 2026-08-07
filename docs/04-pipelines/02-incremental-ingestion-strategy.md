@@ -35,6 +35,27 @@ File JSON lưu vết trạng thái commit an toàn:
 *   **State Control (Checkpoint):** File JSON lưu vết watermark `updated_at` và `order_id` cuối cùng. Ghi file theo nguyên tắc Atomic (Ghi file `.tmp` -> Đổi tên đè file `.json`) để chống hỏng file khi crash.
 *   **Observability (Manifest):** File JSON đi kèm mỗi Batch Parquet, lưu trữ metadata (row_count, started_at, completed_at) phục vụ audit.
 
+## 5. Commit Ordering & State Management
+
+Để đảm bảo tính toàn vẹn dữ liệu (At-least-once semantics) và khả năng tự phục hồi, pipeline áp dụng mô hình quản lý trạng thái kép (Dual-state management) bao gồm Checkpoint và Pending Context.
+
+**Thứ tự thực thi bắt buộc trong một Batch (Commit Ordering):**
+1. Extract records & next watermark từ Source.
+2. Build & Save Pending Context (ghi nhận trạng thái in-flight).
+3. Write Bronze Parquet (Idempotent overwrite).
+4. Save Checkpoint (commit thành công).
+5. Delete Pending Context (đóng giao dịch).
+
+**Ma trận phục hồi sự cố (Crash Recovery Matrix):**
+Dựa trên thứ tự commit, hệ thống có khả năng tự động khôi phục dữ liệu ở bất kỳ thời điểm ngắt điện/crash nào:
+
+| Thời điểm Crash | Trạng thái File | Hành động Phục hồi khi Restart |
+| :--- | :--- | :--- |
+| Trước khi lưu Pending Context | Không có side effect | Bắt đầu lại một batch mới từ Checkpoint hiện tại. |
+| Sau Pending, trước khi ghi Bronze | Có Pending, chưa có Parquet | Đọc Pending Context, chạy lại batch với đúng boundaries và ghi Parquet mới. |
+| Sau khi ghi Bronze, trước Checkpoint | Có Pending, có Parquet, Checkpoint cũ | Đọc Pending Context, chạy lại batch, ghi đè Parquet (Idempotent), tiến Checkpoint. |
+| Sau Checkpoint, trước khi xóa Pending | Có Pending (thành rác), có Parquet, Checkpoint mới | Phát hiện Checkpoint đã tiến lên. Xóa bỏ file Pending rác và chạy batch tiếp theo. |
+
 
 ## 5. Architectural Boundaries (Phân tách trách nhiệm)
 

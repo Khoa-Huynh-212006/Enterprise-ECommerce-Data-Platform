@@ -422,3 +422,21 @@ order_reviews
 **Kết quả**
 
 - Bronze Writer: Prototype COMPLETE.
+
+## Mốc 17 — Incremental Runner & Crash Recovery
+
+### 07/08/2026
+
+**Mục tiêu**
+- Ghép nối Extractor, Bronze Writer và Checkpoint Manager thành một Orchestrator hoàn chỉnh.
+- Xây dựng cơ chế xử lý lỗi và tự phục hồi (Crash Recovery) bảo toàn dữ liệu.
+
+**Đã thực hiện**
+- Thiết kế Single-Batch và Multi-Batch loops với Progress Guards.
+- Triển khai `pending_batch_manager.py` với cấu trúc JSON validation chặt chẽ và atomic writes.
+- Áp dụng Commit Ordering: Extract -> Pending -> Write -> Checkpoint -> Delete Pending.
+- Viết Smoke Tests toàn diện kiểm chứng Happy Path, Watermark fidelity, và các kịch bản Crash (trước/sau Checkpoint).
+- Phân tách logic Next Batch Number và Batches Committed, đảm bảo không ghi đè file sau khi resume.
+
+**Kết quả**
+- Incremental Runner: COMPLETE. Khả năng tự phục hồi đạt chuẩn Production.
