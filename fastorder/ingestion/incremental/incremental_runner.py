@@ -6,6 +6,11 @@ from sqlalchemy import Connection
 from fastorder.ingestion.incremental.orders_extractor import extract_orders_batch
 from fastorder.ingestion.incremental.bronze_writer import write_bronze_batch
 from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_atomic, load_checkpoint
+from fastorder.ingestion.incremental.pending_batch_manager import (
+    build_pending_batch_context,
+    save_pending_batch_context_atomic,
+    delete_pending_batch_context
+)
 
 def process_one_orders_batch(
         conn: Connection,
@@ -14,10 +19,13 @@ def process_one_orders_batch(
         batch_size: int, 
         bronze_root: Path, 
         checkpoint_path: Path,
+        pending_context_path: Path,
+        run_id: str,
         extraction_id: str,
         ingested_at: datetime
 ) -> Dict[str, Any]:
     
+    # 1. Trích xuất
     batch_records, next_watermark = extract_orders_batch(
         lower_watermark=lower_watermark,
         upper_watermark=run_upper_watermark,
@@ -29,9 +37,29 @@ def process_one_orders_batch(
         return {
             "status": "completed",
             "records_written": 0,
-            "checkpoint_updated": False
+            "checkpoint_updated": False,
+            "pending_context_deleted": False
         }
 
+    # 2. Xây dựng và Lưu Pending Context (Ghi nhận trạng thái "Đang làm dở")
+    pending_context = build_pending_batch_context(
+        table_name="orders",
+        run_id=run_id,
+        run_upper_watermark=run_upper_watermark,
+        lower_watermark=lower_watermark,
+        batch_upper_watermark=next_watermark,
+        extraction_id=extraction_id,
+        ingested_at=ingested_at.strftime("%Y-%m-%dT%H:%M:%S.%f"),
+        batch_size=batch_size
+    )
+    
+    save_pending_batch_context_atomic(
+        file_path=pending_context_path,
+        context=pending_context,
+        expected_table_name="orders"
+    )
+
+    # 3. Ghi Bronze Parquet
     output_path = write_bronze_batch(
         records=batch_records,
         bronze_root=bronze_root,
@@ -40,6 +68,7 @@ def process_one_orders_batch(
         ingested_at=ingested_at
     )
 
+    # 4. Ghi Checkpoint (Commit)
     new_checkpoint = {
         "version": 1,
         "table_name": "orders",
@@ -51,13 +80,17 @@ def process_one_orders_batch(
         checkpoint=new_checkpoint,
         expected_table_name="orders"
     )
+    
+    # 5. Xóa Pending Context (Hoàn tất giao dịch)
+    delete_pending_batch_context(pending_context_path)
 
     return {
         "status": "batch_committed",
         "records_written": len(batch_records),
         "output_path": output_path,
         "next_watermark": next_watermark,
-        "checkpoint_updated": True
+        "checkpoint_updated": True,
+        "pending_context_deleted": True
     }
 
 
@@ -184,88 +217,71 @@ if __name__ == "__main__":
     from fastorder.db.connection import get_engine
     from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
 
-    print("Bắt đầu Smoke Test: Multi-Batch Runner (12 Records)\n" + "-"*50)
+    print("Bắt đầu Smoke Test: Single Batch + Pending Context (Happy Path)\n" + "-"*50)
 
-    test_bronze_root = Path("test_bronze_multibatch")
-    test_checkpoint_path = Path("test_multi_checkpoint.json")
+    test_bronze_root = Path("test_bronze_pending")
+    test_checkpoint_path = Path("test_pending_checkpoint.json")
+    test_pending_context_path = Path("test_pending_context.json")
 
-    if test_bronze_root.exists(): shutil.rmtree(test_bronze_root)
-    if test_checkpoint_path.exists(): test_checkpoint_path.unlink()
+    # Dọn dẹp môi trường test
+    for p in [test_bronze_root]:
+        if p.exists(): shutil.rmtree(p)
+    for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
+        if p.exists(): p.unlink()
 
     engine = get_engine()
 
     try:
         with engine.connect() as conn:
-            full_upper = get_upper_watermark(conn)
-            if not full_upper:
+            # Lấy mốc Upper từ DB
+            upper_wm = get_upper_watermark(conn)
+            if not upper_wm:
                 raise RuntimeError("Bảng rỗng, không đủ dữ liệu để test!")
                 
             initial_lower_wm = {"updated_at": "1970-01-01T00:00:00.000000", "order_id": ""}
             
-            twelve_records, test_upper = extract_orders_batch(
+            print("Chạy thử 1 Batch 5 records với Pending Context Guard...")
+            
+            result = process_one_orders_batch(
                 conn=conn,
                 lower_watermark=initial_lower_wm,
-                upper_watermark=full_upper,
-                batch_size=12
-            )
-            
-            # Kiểm tra gắt gao: Bắt buộc phải có đúng 12 records
-            if len(twelve_records) != 12:
-                raise RuntimeError(
-                    f"Smoke test cần đúng 12 records, "
-                    f"nhưng extractor chỉ trả về {len(twelve_records)}."
-                )
-            
-            print(f"-> Tạo thành công biên ảo tại record thứ 12: {test_upper}")
-
-            print("\nChạy Incremental Runner (Batch_size = 5, Max 12 records)...")
-            run_result = run_orders_incremental_ingestion(
-                conn=conn,
+                run_upper_watermark=upper_wm,
+                batch_size=5,
                 bronze_root=test_bronze_root,
                 checkpoint_path=test_checkpoint_path,
-                batch_size=5,
-                run_id="test_multi_run_2026",
-                run_started_at=datetime.now(),
-                run_upper_watermark=test_upper
+                pending_context_path=test_pending_context_path,
+                run_id="test_run_pending_001",
+                extraction_id="test_run_pending_001_batch_001",
+                ingested_at=datetime.now()
             )
 
-            print(f"\nSummary: {run_result['status']} | Batches: {run_result['batches_committed']} | Rows: {run_result['records_written']}")
+            # 1. Hợp đồng trả về
+            assert result["status"] == "batch_committed", "Sai status trả về."
+            assert result["checkpoint_updated"] is True, "Checkpoint báo chưa update."
+            assert result["pending_context_deleted"] is True, "Pending Context báo chưa xóa."
+            assert result["output_path"].exists(), "File Parquet không tồn tại."
+            print("   Assert 1: Return contract trả về chuẩn xác. File Bronze đã được tạo.")
+
+            # 2. Checkpoint đồng bộ Record cuối
+            written_df = pd.read_parquet(result["output_path"])
+            last_row = written_df.iloc[-1]
+            last_row_updated_at_str = last_row["updated_at"].strftime("%Y-%m-%dT%H:%M:%S.%f")
             
-            # Assert 1: Thống kê cơ bản
-            assert run_result["status"] == "run_completed", "Trạng thái run bị sai."
-            assert run_result["records_written"] == 12, "Tổng số records không bằng 12."
-            assert run_result["batches_committed"] == 3, "Phải chia thành 3 batches."
-            assert len(run_result["output_paths"]) == 3, "Phải có 3 file output."
-            print("   Assert 1: Thống kê cơ bản chuẩn xác.")
-
-            # Assert 2: Cấu trúc 5-5-2
-            batch_row_counts = [len(pd.read_parquet(path)) for path in run_result["output_paths"]]
-            assert batch_row_counts == [5, 5, 2], f"Kích thước batch không đúng: {batch_row_counts}"
-            print("   Assert 2: Kích thước từng batch chia đúng tỷ lệ 5-5-2.")
-
-            # Assert 3: Chống trùng / Mất record bằng Order ID
-            output_order_ids = []
-            for path in run_result["output_paths"]:
-                batch_df = pd.read_parquet(path)
-                output_order_ids.extend(batch_df["order_id"].tolist())
-
-            expected_order_ids = [record["order_id"] for record in twelve_records]
-            assert output_order_ids == expected_order_ids, "Dữ liệu nhiều batch bị mất, trùng hoặc sai thứ tự."
-            print("   Assert 3: Trình tự Order ID bảo toàn tuyệt đối xuyên suốt các file Parquet.")
-
-            # Assert 4: Checkpoint
             saved_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
-            assert saved_checkpoint["watermark"] == test_upper, "Checkpoint đĩa không khớp Test Upper."
-            assert run_result["final_watermark"] == test_upper, "Final Watermark bộ nhớ không khớp Test Upper."
-            print("   Assert 4: Checkpoint cuối chạm đúng Upper Watermark.")
-            
-            # Assert 5: File rác
-            assert not list(test_bronze_root.rglob("*.tmp")), "File rác .tmp bị rò rỉ!"
-            print("   Assert 5: Tuyệt đối không rò rỉ file .tmp.")
-            
+            assert saved_checkpoint["watermark"] == {
+                "updated_at": last_row_updated_at_str,
+                "order_id": last_row["order_id"]
+            }, "LỖI: Checkpoint không khớp dòng cuối Parquet!"
+            print("   Assert 2: Checkpoint commit đúng mốc.")
+
+            # 3. Quản trị Pending Context
+            assert not test_pending_context_path.exists(), "File Pending Context vẫn còn tồn tại sau khi Commit!"
+            assert not Path(f"{test_pending_context_path}.tmp").exists(), "File .tmp của Pending Context bị rò rỉ!"
+            print("   Assert 3: Pending Context và file .tmp rác đã bị xóa sổ hoàn toàn sau khi thành công.")
+
     finally:
-        if test_bronze_root.exists(): 
-            shutil.rmtree(test_bronze_root)
-        if test_checkpoint_path.exists(): 
-            test_checkpoint_path.unlink()
+        for p in [test_bronze_root]:
+            if p.exists(): shutil.rmtree(p)
+        for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
+            if p.exists(): p.unlink()
         print("\nHoàn tất dọn dẹp file test.")
