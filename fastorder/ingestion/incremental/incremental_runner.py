@@ -9,7 +9,8 @@ from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_a
 from fastorder.ingestion.incremental.pending_batch_manager import (
     build_pending_batch_context,
     save_pending_batch_context_atomic,
-    delete_pending_batch_context
+    delete_pending_batch_context,
+    load_pending_batch_context
 )
 
 def process_one_orders_batch(
@@ -98,13 +99,14 @@ def run_orders_incremental_ingestion(
     conn: Connection,
     bronze_root: Path,
     checkpoint_path: Path,
+    pending_context_path: Path,
     batch_size: int,
     run_id: str,
     run_started_at: datetime,
     run_upper_watermark: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
     
-    # 1. Validate Input (Chặn bool vì isinstance(True, int) == True)
+    # 1. Validate Input 
     if (
         not isinstance(batch_size, int)
         or isinstance(batch_size, bool)
@@ -117,9 +119,10 @@ def run_orders_incremental_ingestion(
     if not isinstance(run_started_at, datetime):
         raise ValueError("run_started_at phải là datetime object.")
 
-    # 2. Khởi tạo mốc chạy
+    # 2. Khởi tạo mốc chạy (Checkpoint & Pending)
     checkpoint = load_checkpoint(checkpoint_path, "orders")
     current_lower = checkpoint["watermark"]
+    pending_context = load_pending_batch_context(pending_context_path, "orders")
 
     # 3. Chụp Upper Watermark (1 lần duy nhất)
     from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
@@ -142,7 +145,60 @@ def run_orders_incremental_ingestion(
     curr_key = _wm_key(current_lower)
     upper_key = _wm_key(run_upper_watermark)
 
-    if curr_key == upper_key:
+    batch_number = 1
+    total_records = 0
+    output_paths = []
+
+    
+    # CRASH RECOVERY (PHỤC HỒI TRẠNG THÁI)
+    
+    if pending_context:
+        p_lower_key = _wm_key(pending_context["lower_watermark"])
+        p_upper_key = _wm_key(pending_context["batch_upper_watermark"])
+
+        if curr_key == p_lower_key:
+            # Trường hợp 1: Crash sau Pending, trước Checkpoint. Cần retry đúng batch này.
+            pending_ingested_at = datetime.strptime(pending_context["ingested_at"], "%Y-%m-%dT%H:%M:%S.%f")
+            
+            # Ghi đè run_upper_watermark bằng giá trị từ pending để giữ nguyên biên của batch
+            run_upper_watermark = pending_context["run_upper_watermark"]
+            upper_key = _wm_key(run_upper_watermark)
+            
+            result = process_one_orders_batch(
+                conn=conn,
+                lower_watermark=pending_context["lower_watermark"],
+                run_upper_watermark=run_upper_watermark,
+                batch_size=pending_context["batch_size"],
+                bronze_root=bronze_root,
+                checkpoint_path=checkpoint_path,
+                pending_context_path=pending_context_path,
+                run_id=pending_context["run_id"],
+                extraction_id=pending_context["extraction_id"],
+                ingested_at=pending_ingested_at
+            )
+
+            if result["status"] == "completed":
+                raise RuntimeError("Batch phục hồi trả về rỗng. Dữ liệu nguồn có thể đã bị thay đổi bất thường.")
+                
+            current_lower = result["next_watermark"]
+            curr_key = _wm_key(current_lower)
+            total_records += result["records_written"]
+            output_paths.append(result["output_path"])
+            
+            # Khôi phục số thứ tự batch để các batch sau không bị lặp ID
+            try:
+                batch_number = int(pending_context["extraction_id"].split("_batch_")[-1]) + 1
+            except ValueError:
+                batch_number += 1
+                
+        elif curr_key >= p_upper_key:
+            # Trường hợp 2: Crash sau Checkpoint, trước khi xóa Pending. Checkpoint đã an toàn.
+            delete_pending_batch_context(pending_context_path)
+            
+        else:
+            raise RuntimeError(f"Trạng thái mâu thuẫn: Checkpoint {current_lower} không khớp với Pending Context.")
+
+    if curr_key == upper_key and total_records == 0:
         return {
             "status": "no_new_data",
             "run_id": run_id,
@@ -158,11 +214,7 @@ def run_orders_incremental_ingestion(
             f"lớn hơn Upper watermark ({run_upper_watermark})."
         )
 
-    batch_number = 1
-    total_records = 0
-    output_paths = []
-
-    # 4. Vòng lặp Multi-batch
+    # 4. Vòng lặp Multi-batch (Bình thường)
     while curr_key < upper_key:
         extraction_id = f"{run_id}_batch_{batch_number:06d}"
         
@@ -173,11 +225,12 @@ def run_orders_incremental_ingestion(
             batch_size=batch_size,
             bronze_root=bronze_root,
             checkpoint_path=checkpoint_path,
+            pending_context_path=pending_context_path,
+            run_id=run_id,
             extraction_id=extraction_id,
             ingested_at=run_started_at
         )
 
-        # Chặn lỗi Logic: Chưa chạm Upper mà đã hết dữ liệu
         if result["status"] == "completed":
             raise RuntimeError(
                 "Extractor trả về batch rỗng dù current watermark "
@@ -211,13 +264,15 @@ def run_orders_incremental_ingestion(
     }
 
 
+
 if __name__ == "__main__":
     import shutil
     import pandas as pd
+    from unittest.mock import patch
     from fastorder.db.connection import get_engine
     from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
 
-    print("Bắt đầu Smoke Test: Tích hợp Pending Context (Wiring Fix)\n" + "-"*50)
+    print("Bắt đầu Smoke Test: Tích hợp Pending Context & Crash Recovery\n" + "-"*50)
 
     test_bronze_root = Path("test_bronze_pending")
     test_checkpoint_path = Path("test_multi_checkpoint.json")
@@ -228,7 +283,6 @@ if __name__ == "__main__":
         for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
             if p.exists(): p.unlink()
 
-    _cleanup()
     engine = get_engine()
 
     try:
@@ -239,7 +293,6 @@ if __name__ == "__main__":
                 
             initial_lower_wm = {"updated_at": "1970-01-01T00:00:00.000000", "order_id": ""}
             
-            # Lấy 12 records để test Multi-batch
             twelve_records, test_upper = extract_orders_batch(
                 conn=conn, lower_watermark=initial_lower_wm, upper_watermark=full_upper, batch_size=12
             )
@@ -247,7 +300,12 @@ if __name__ == "__main__":
             if len(twelve_records) != 12:
                 raise RuntimeError(f"Smoke test cần đúng 12 records, nhưng chỉ trả về {len(twelve_records)}.")
 
-
+            
+            # TEST 1: SINGLE BATCH
+            
+            _cleanup()
+            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
+            
             print("\n[TEST 1] Chạy thử 1 Batch 5 records...")
             result_single = process_one_orders_batch(
                 conn=conn,
@@ -263,12 +321,15 @@ if __name__ == "__main__":
             )
             
             assert result_single["status"] == "batch_committed"
-            assert not test_pending_context_path.exists(), "File Pending Context Single-batch không bị xóa."
-            print("   [TEST 1] Single Batch hoàn tất, Pending Context đã được dọn sạch.")
+            assert not test_pending_context_path.exists()
+            print("  [PASS] Single Batch hoàn tất, Pending Context đã được dọn sạch.")
             
-            # Reset lại môi trường cho Test 2
+            
+            # TEST 2: MULTI-BATCH (5-5-2)
+            
             _cleanup()
-
+            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
+            
             print("\n[TEST 2] Chạy Multi-Batch Runner (Batch_size = 5, Max 12 records)...")
             run_result = run_orders_incremental_ingestion(
                 conn=conn,
@@ -284,11 +345,99 @@ if __name__ == "__main__":
             assert run_result["status"] == "run_completed"
             assert run_result["records_written"] == 12
             assert run_result["batches_committed"] == 3
+            assert not test_pending_context_path.exists()
+            print("  [PASS] Multi-Batch (5-5-2) hoàn tất.")
+
             
-            # Kiểm tra Pending Context không còn rò rỉ sau TOÀN BỘ vòng lặp
-            assert not test_pending_context_path.exists(), "File Pending Context Multi-batch bị rò rỉ."
-            assert not Path(f"{test_pending_context_path}.tmp").exists(), "File .tmp của Pending Context bị rò rỉ."
-            print("   [TEST 2] Multi-Batch (5-5-2) hoàn tất. Hệ thống dọn sạch Pending Context sau khi chạy xong.")
+            # TEST 3: CRASH SAU KHI GHI BRONZE, TRƯỚC CHECKPOINT
+            
+            _cleanup()
+            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
+            
+            print("\n[TEST 3] Giả lập Crash sau Bronze, trước Checkpoint...")
+            with patch("__main__.save_checkpoint_atomic", side_effect=RuntimeError("Giả lập mất điện")):
+                try:
+                    run_orders_incremental_ingestion(
+                        conn=conn,
+                        bronze_root=test_bronze_root,
+                        checkpoint_path=test_checkpoint_path,
+                        pending_context_path=test_pending_context_path,
+                        batch_size=5,
+                        run_id="test_crash_1",
+                        run_started_at=datetime.now(),
+                        run_upper_watermark=test_upper
+                    )
+                except RuntimeError as e:
+                    assert "Giả lập mất điện" in str(e)
+            
+            # Assertions sau Crash
+            saved_ckpt = load_checkpoint(test_checkpoint_path, "orders")
+            assert saved_ckpt["watermark"] == initial_lower_wm, "Checkpoint không được phép thay đổi."
+            assert test_pending_context_path.exists(), "Pending Context phải được bảo toàn."
+            assert len(list(test_bronze_root.rglob("*.parquet"))) == 1, "File Bronze của Batch 1 phải tồn tại."
+            print("  [PASS] Hệ thống bắt lỗi thành công, Checkpoint giữ nguyên vị trí, Pending Context còn tồn tại.")
+
+            print("  [TEST 3] Bắt đầu chạy lại (Resume) để phục hồi...")
+            recovery_result = run_orders_incremental_ingestion(
+                conn=conn,
+                bronze_root=test_bronze_root,
+                checkpoint_path=test_checkpoint_path,
+                pending_context_path=test_pending_context_path,
+                batch_size=5,
+                run_id="test_crash_1",
+                run_started_at=datetime.now(),
+                run_upper_watermark=test_upper
+            )
+            
+            assert recovery_result["records_written"] == 12
+            assert recovery_result["batches_committed"] == 3
+            assert not test_pending_context_path.exists()
+            print("  [PASS] Phục hồi (Resume) và chạy tiếp hoàn hảo.")
+
+            
+            # TEST 4: CRASH SAU CHECKPOINT, TRƯỚC KHI XÓA PENDING
+            _cleanup()
+            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
+            
+            print("\n[TEST 4] Giả lập Crash sau Checkpoint, trước khi xóa Pending...")
+            with patch("__main__.delete_pending_batch_context", side_effect=RuntimeError("Giả lập tắt nguồn")):
+                try:
+                    run_orders_incremental_ingestion(
+                        conn=conn,
+                        bronze_root=test_bronze_root,
+                        checkpoint_path=test_checkpoint_path,
+                        pending_context_path=test_pending_context_path,
+                        batch_size=5,
+                        run_id="test_crash_2",
+                        run_started_at=datetime.now(),
+                        run_upper_watermark=test_upper
+                    )
+                except RuntimeError as e:
+                    assert "Giả lập tắt nguồn" in str(e)
+
+            # Assertions sau Crash
+            saved_ckpt = load_checkpoint(test_checkpoint_path, "orders")
+            assert saved_ckpt["watermark"] != initial_lower_wm, "Checkpoint bắt buộc phải tiến lên."
+            assert test_pending_context_path.exists(), "Pending Context phải rò rỉ ra ngoài do Crash."
+            print("  [PASS] Hệ thống dính Crash, Checkpoint đã tiến lên, Pending Context thành rác.")
+
+            print("  [TEST 4] Bắt đầu chạy lại để dọn rác và hoàn tất tiến trình...")
+            recovery_result_2 = run_orders_incremental_ingestion(
+                conn=conn,
+                bronze_root=test_bronze_root,
+                checkpoint_path=test_checkpoint_path,
+                pending_context_path=test_pending_context_path,
+                batch_size=5,
+                run_id="test_crash_2",
+                run_started_at=datetime.now(),
+                run_upper_watermark=test_upper
+            )
+            
+            # Batch 1 (5 records) đã commit, chỉ chạy tiếp 5 và 2 = 7 records, 2 batches.
+            assert recovery_result_2["records_written"] == 7
+            assert recovery_result_2["batches_committed"] == 2
+            assert not test_pending_context_path.exists()
+            print("  [PASS] Quét sạch Pending rác và hoàn thành 2 Batch cuối hoàn hảo.")
 
     finally:
         _cleanup()
