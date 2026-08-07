@@ -149,9 +149,9 @@ def run_orders_incremental_ingestion(
     total_records = 0
     output_paths = []
 
-    
+    # ==========================================
     # CRASH RECOVERY (PHỤC HỒI TRẠNG THÁI)
-    
+    # ==========================================
     if pending_context:
         p_lower_key = _wm_key(pending_context["lower_watermark"])
         p_upper_key = _wm_key(pending_context["batch_upper_watermark"])
@@ -264,7 +264,9 @@ def run_orders_incremental_ingestion(
     }
 
 
-
+# ==========================================
+# SMOKE TEST
+# ==========================================
 if __name__ == "__main__":
     import shutil
     import pandas as pd
@@ -300,9 +302,9 @@ if __name__ == "__main__":
             if len(twelve_records) != 12:
                 raise RuntimeError(f"Smoke test cần đúng 12 records, nhưng chỉ trả về {len(twelve_records)}.")
 
-            
+            # ---------------------------------------------------------
             # TEST 1: SINGLE BATCH
-            
+            # ---------------------------------------------------------
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
@@ -324,9 +326,9 @@ if __name__ == "__main__":
             assert not test_pending_context_path.exists()
             print("  [PASS] Single Batch hoàn tất, Pending Context đã được dọn sạch.")
             
-            
+            # ---------------------------------------------------------
             # TEST 2: MULTI-BATCH (5-5-2)
-            
+            # ---------------------------------------------------------
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
@@ -348,9 +350,9 @@ if __name__ == "__main__":
             assert not test_pending_context_path.exists()
             print("  [PASS] Multi-Batch (5-5-2) hoàn tất.")
 
-            
+            # ---------------------------------------------------------
             # TEST 3: CRASH SAU KHI GHI BRONZE, TRƯỚC CHECKPOINT
-            
+            # ---------------------------------------------------------
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
@@ -394,8 +396,9 @@ if __name__ == "__main__":
             assert not test_pending_context_path.exists()
             print("  [PASS] Phục hồi (Resume) và chạy tiếp hoàn hảo.")
 
-            
+            # ---------------------------------------------------------
             # TEST 4: CRASH SAU CHECKPOINT, TRƯỚC KHI XÓA PENDING
+            # ---------------------------------------------------------
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
