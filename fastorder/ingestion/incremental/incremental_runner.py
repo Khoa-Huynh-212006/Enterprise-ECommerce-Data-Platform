@@ -180,9 +180,8 @@ def run_orders_incremental_ingestion(
     total_records = 0
     output_paths = []
 
-    # ==========================================
     # CRASH RECOVERY (PHỤC HỒI TRẠNG THÁI)
-    # ==========================================
+    
     if pending_context:
         p_lower_key = _wm_key(pending_context["lower_watermark"])
         p_upper_key = _wm_key(pending_context["batch_upper_watermark"])
@@ -238,9 +237,9 @@ def run_orders_incremental_ingestion(
             f"lon hon Upper watermark ({run_upper_watermark})."
         )
 
-    # ==========================================
+    
     # MULTI-BATCH PROCESSING
-    # ==========================================
+    
     while curr_key < upper_key:
         extraction_id = f"{effective_run_id}_batch_{next_batch_number:06d}"
         
@@ -292,9 +291,9 @@ def run_orders_incremental_ingestion(
     }
 
 
-# ==========================================
+
 # SMOKE TEST
-# ==========================================
+
 if __name__ == "__main__":
     import shutil
     import pandas as pd
@@ -330,9 +329,9 @@ if __name__ == "__main__":
             if len(twelve_records) != 12:
                 raise RuntimeError(f"Smoke test can dung 12 records, nhung chi tra ve {len(twelve_records)}.")
 
-            # ---------------------------------------------------------
+            
             # TEST 1: SINGLE BATCH HAPPY PATH
-            # ---------------------------------------------------------
+            
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
@@ -354,9 +353,9 @@ if __name__ == "__main__":
             assert not test_pending_context_path.exists()
             print("  [PASS] Single Batch hoan tat, Pending Context da duoc don sach.")
 
-            # ---------------------------------------------------------
+            
             # TEST 2: MULTI-BATCH 5-5-2
-            # ---------------------------------------------------------
+            
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
@@ -381,9 +380,9 @@ if __name__ == "__main__":
             assert final_checkpoint["watermark"] == test_upper
             print("  [PASS] Multi-Batch (5-5-2) hoan tat, Checkpoint cuoi khop test_upper.")
 
-            # ---------------------------------------------------------
+            
             # TEST 3: CRASH SAU KHI GHI BRONZE, TRUOC CHECKPOINT
-            # ---------------------------------------------------------
+            
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             
@@ -443,9 +442,9 @@ if __name__ == "__main__":
             assert not list(test_bronze_root.rglob("*.tmp"))
             print("  [PASS] Phuc hoi thanh cong, du lieu khop 100%, Batch Size duoc ke thua.")
 
-            # ---------------------------------------------------------
+            
             # TEST 4: CRASH SAU CHECKPOINT, TRUOC KHI XOA PENDING
-            # ---------------------------------------------------------
+            
             _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
             

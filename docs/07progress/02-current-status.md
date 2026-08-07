@@ -93,8 +93,10 @@ Hệ thống Local Bronze Layer (PostgreSQL -> Parquet) đã hoàn thành toàn 
 13. Xây dựng Bronze Parquet Writer (Idempotent atomic write, Metadata injection) - **COMPLETE**
 14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - **COMPLETE**
 Mục tiêu tiếp theo (Next Phase):
-15. Đưa Ingestion Runner lên Airflow DAG.
-16. Tích hợp ADLS Gen2 để thay thế Local Path.
+15. Local End-to-End Operational Validation - COMPLETE
+Mục tiêu tiếp theo (Next Phase):
+16. Chuyển đổi và cấu hình Airflow DAG cho Incremental Runner.
+17. Tích hợp Azure Data Lake Storage (ADLS Gen2) để thay thế hệ thống Local Path.
 
 
 

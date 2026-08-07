@@ -242,3 +242,14 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 * Checkpoint chỉ trả lời câu hỏi "Pipeline đã hoàn thành đến đâu?", nhưng không biết "Tiến trình đang làm dở việc gì?". 
 * Việc không có Pending Context sẽ khiến tiến trình khi restart bị mất `extraction_id` cũ, tự động sinh ID mới và ghi file Parquet mới, dẫn đến rác dữ liệu trên Data Lake hoặc ghi đè sai batch. Pending Context đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) được bảo toàn tuyệt đối xuyên suốt các lần khởi động lại tiến trình.
+
+## D-021 — Áp dụng Stable Retry Context và Fail-Fast cho State Management
+
+**Date:** 2026-08-07
+**Decision:**
+* Sử dụng `Pending Batch Context` để kế thừa `run_id`, `ingested_at`, `batch_size`, và watermark boundaries khi phục hồi sau sự cố.
+* Tuyệt đối không dùng code để tự động lấp liếm (ví dụ: tự xóa file checkpoint rỗng hoặc tự đoán extraction_id). Hệ thống phải Fail-fast khi phát hiện trạng thái state file bất thường.
+
+**Reason:**
+* Đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) không bị biến đổi xuyên suốt các lần restart.
+* Việc tự động bỏ qua lỗi của file trạng thái (như file bị rỗng do I/O error) có thể dẫn đến hậu quả nghiêm trọng như kéo lại toàn bộ lịch sử dữ liệu (Disaster Risk) hoặc ghi đè sai batch. Con người phải can thiệp khi State files bị hỏng.

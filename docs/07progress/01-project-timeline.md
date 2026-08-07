@@ -440,3 +440,20 @@ order_reviews
 
 **Kết quả**
 - Incremental Runner: COMPLETE. Khả năng tự phục hồi đạt chuẩn Production.
+
+## Mốc 17 — Incremental Runner & End-to-End Crash Recovery
+
+### 2026-08-07
+
+**Mục tiêu**
+- Hoàn thiện End-to-End Operational Validation cho Local Incremental Ingestion MVP.
+- Chứng minh khả năng Crash Recovery và Commit Ordering với dữ liệu thật.
+
+**Đã thực hiện**
+- Tinh chỉnh logic Load Pending Context, ưu tiên Pending thay vì chụp Upper Watermark mới để đảm bảo tính nhất quán của Run đang dở.
+- Tách biệt `batches_committed` và `next_batch_number` để ngăn chặn ghi đè ID khi resume.
+- Bổ sung validation nghiêm ngặt cho `extraction_id` khi phục hồi.
+- Chạy thành công toàn bộ E2E suite: Initial Load, No New Data, Simulator updates, và 2 kịch bản Crash/Recovery khắc nghiệt.
+
+**Kết quả**
+- Local Incremental Ingestion MVP: COMPLETE.
