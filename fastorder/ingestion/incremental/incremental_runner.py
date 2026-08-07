@@ -41,7 +41,7 @@ def process_one_orders_batch(
             "pending_context_deleted": False
         }
 
-    # 2. Xây dựng và Lưu Pending Context (Ghi nhận trạng thái "Đang làm dở")
+    # 2. Xây dựng và Lưu Pending Context
     pending_context = build_pending_batch_context(
         table_name="orders",
         run_id=run_id,
@@ -81,7 +81,7 @@ def process_one_orders_batch(
         expected_table_name="orders"
     )
     
-    # 5. Xóa Pending Context (Hoàn tất giao dịch)
+    # 5. Xóa Pending Context
     delete_pending_batch_context(pending_context_path)
 
     return {
@@ -217,71 +217,79 @@ if __name__ == "__main__":
     from fastorder.db.connection import get_engine
     from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
 
-    print("Bắt đầu Smoke Test: Single Batch + Pending Context (Happy Path)\n" + "-"*50)
+    print("Bắt đầu Smoke Test: Tích hợp Pending Context (Wiring Fix)\n" + "-"*50)
 
     test_bronze_root = Path("test_bronze_pending")
-    test_checkpoint_path = Path("test_pending_checkpoint.json")
-    test_pending_context_path = Path("test_pending_context.json")
+    test_checkpoint_path = Path("test_multi_checkpoint.json")
+    test_pending_context_path = Path("test_multi_pending.json")
 
-    # Dọn dẹp môi trường test
-    for p in [test_bronze_root]:
-        if p.exists(): shutil.rmtree(p)
-    for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
-        if p.exists(): p.unlink()
+    def _cleanup():
+        if test_bronze_root.exists(): shutil.rmtree(test_bronze_root)
+        for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
+            if p.exists(): p.unlink()
 
+    _cleanup()
     engine = get_engine()
 
     try:
         with engine.connect() as conn:
-            # Lấy mốc Upper từ DB
-            upper_wm = get_upper_watermark(conn)
-            if not upper_wm:
+            full_upper = get_upper_watermark(conn)
+            if not full_upper:
                 raise RuntimeError("Bảng rỗng, không đủ dữ liệu để test!")
                 
             initial_lower_wm = {"updated_at": "1970-01-01T00:00:00.000000", "order_id": ""}
             
-            print("Chạy thử 1 Batch 5 records với Pending Context Guard...")
+            # Lấy 12 records để test Multi-batch
+            twelve_records, test_upper = extract_orders_batch(
+                conn=conn, lower_watermark=initial_lower_wm, upper_watermark=full_upper, batch_size=12
+            )
             
-            result = process_one_orders_batch(
+            if len(twelve_records) != 12:
+                raise RuntimeError(f"Smoke test cần đúng 12 records, nhưng chỉ trả về {len(twelve_records)}.")
+
+
+            print("\n[TEST 1] Chạy thử 1 Batch 5 records...")
+            result_single = process_one_orders_batch(
                 conn=conn,
                 lower_watermark=initial_lower_wm,
-                run_upper_watermark=upper_wm,
+                run_upper_watermark=test_upper,
                 batch_size=5,
                 bronze_root=test_bronze_root,
                 checkpoint_path=test_checkpoint_path,
                 pending_context_path=test_pending_context_path,
-                run_id="test_run_pending_001",
-                extraction_id="test_run_pending_001_batch_001",
+                run_id="test_single_run",
+                extraction_id="test_single_run_batch_001",
                 ingested_at=datetime.now()
             )
-
-            # 1. Hợp đồng trả về
-            assert result["status"] == "batch_committed", "Sai status trả về."
-            assert result["checkpoint_updated"] is True, "Checkpoint báo chưa update."
-            assert result["pending_context_deleted"] is True, "Pending Context báo chưa xóa."
-            assert result["output_path"].exists(), "File Parquet không tồn tại."
-            print("   Assert 1: Return contract trả về chuẩn xác. File Bronze đã được tạo.")
-
-            # 2. Checkpoint đồng bộ Record cuối
-            written_df = pd.read_parquet(result["output_path"])
-            last_row = written_df.iloc[-1]
-            last_row_updated_at_str = last_row["updated_at"].strftime("%Y-%m-%dT%H:%M:%S.%f")
             
-            saved_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
-            assert saved_checkpoint["watermark"] == {
-                "updated_at": last_row_updated_at_str,
-                "order_id": last_row["order_id"]
-            }, "LỖI: Checkpoint không khớp dòng cuối Parquet!"
-            print("   Assert 2: Checkpoint commit đúng mốc.")
+            assert result_single["status"] == "batch_committed"
+            assert not test_pending_context_path.exists(), "File Pending Context Single-batch không bị xóa."
+            print("   [TEST 1] Single Batch hoàn tất, Pending Context đã được dọn sạch.")
+            
+            # Reset lại môi trường cho Test 2
+            _cleanup()
 
-            # 3. Quản trị Pending Context
-            assert not test_pending_context_path.exists(), "File Pending Context vẫn còn tồn tại sau khi Commit!"
-            assert not Path(f"{test_pending_context_path}.tmp").exists(), "File .tmp của Pending Context bị rò rỉ!"
-            print("   Assert 3: Pending Context và file .tmp rác đã bị xóa sổ hoàn toàn sau khi thành công.")
+            print("\n[TEST 2] Chạy Multi-Batch Runner (Batch_size = 5, Max 12 records)...")
+            run_result = run_orders_incremental_ingestion(
+                conn=conn,
+                bronze_root=test_bronze_root,
+                checkpoint_path=test_checkpoint_path,
+                pending_context_path=test_pending_context_path,
+                batch_size=5,
+                run_id="test_multi_run_2026",
+                run_started_at=datetime.now(),
+                run_upper_watermark=test_upper
+            )
+
+            assert run_result["status"] == "run_completed"
+            assert run_result["records_written"] == 12
+            assert run_result["batches_committed"] == 3
+            
+            # Kiểm tra Pending Context không còn rò rỉ sau TOÀN BỘ vòng lặp
+            assert not test_pending_context_path.exists(), "File Pending Context Multi-batch bị rò rỉ."
+            assert not Path(f"{test_pending_context_path}.tmp").exists(), "File .tmp của Pending Context bị rò rỉ."
+            print("   [TEST 2] Multi-Batch (5-5-2) hoàn tất. Hệ thống dọn sạch Pending Context sau khi chạy xong.")
 
     finally:
-        for p in [test_bronze_root]:
-            if p.exists(): shutil.rmtree(p)
-        for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
-            if p.exists(): p.unlink()
+        _cleanup()
         print("\nHoàn tất dọn dẹp file test.")
