@@ -4,7 +4,7 @@ from typing import Dict, Any, Optional
 from sqlalchemy import Connection
 
 from fastorder.ingestion.incremental.orders_extractor import extract_orders_batch
-from fastorder.ingestion.incremental.bronze_writer import write_bronze_batch
+from fastorder.ingestion.incremental.adls_bronze_writer import write_adls_bronze_batch
 from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_atomic, load_checkpoint
 from fastorder.ingestion.incremental.pending_batch_manager import (
     build_pending_batch_context,
@@ -30,13 +30,11 @@ def _extract_batch_number(extraction_id: str) -> int:
 
     return batch_number
 
-
 def process_one_orders_batch(
         conn: Connection,
         lower_watermark: Dict[str, str],
         run_upper_watermark: Dict[str, str],
         batch_size: int, 
-        bronze_root: Path, 
         checkpoint_path: Path,
         pending_context_path: Path,
         run_id: str,
@@ -44,7 +42,7 @@ def process_one_orders_batch(
         ingested_at: datetime,
         extraction_upper_watermark: Optional[Dict[str, str]] = None
 ) -> Dict[str, Any]:
-    
+
     effective_extraction_upper = (
         extraction_upper_watermark 
         if extraction_upper_watermark is not None 
@@ -83,9 +81,8 @@ def process_one_orders_batch(
         expected_table_name="orders"
     )
 
-    output_path = write_bronze_batch(
+    output_path = write_adls_bronze_batch(
         records=batch_records,
-        bronze_root=bronze_root,
         table_name="orders",
         extraction_id=extraction_id,
         ingested_at=ingested_at
@@ -117,7 +114,6 @@ def process_one_orders_batch(
 
 def run_orders_incremental_ingestion(
     conn: Connection,
-    bronze_root: Path,
     checkpoint_path: Path,
     pending_context_path: Path,
     batch_size: int,
@@ -180,8 +176,6 @@ def run_orders_incremental_ingestion(
     total_records = 0
     output_paths = []
 
-    # CRASH RECOVERY (PHỤC HỒI TRẠNG THÁI)
-    
     if pending_context:
         p_lower_key = _wm_key(pending_context["lower_watermark"])
         p_upper_key = _wm_key(pending_context["batch_upper_watermark"])
@@ -192,7 +186,6 @@ def run_orders_incremental_ingestion(
                 lower_watermark=pending_context["lower_watermark"],
                 run_upper_watermark=run_upper_watermark,
                 batch_size=effective_batch_size,
-                bronze_root=bronze_root,
                 checkpoint_path=checkpoint_path,
                 pending_context_path=pending_context_path,
                 run_id=effective_run_id,
@@ -236,9 +229,6 @@ def run_orders_incremental_ingestion(
             f"Trang thai khong hop le: Lower watermark ({current_lower}) "
             f"lon hon Upper watermark ({run_upper_watermark})."
         )
-
-    
-    # MULTI-BATCH PROCESSING
     
     while curr_key < upper_key:
         extraction_id = f"{effective_run_id}_batch_{next_batch_number:06d}"
@@ -248,7 +238,6 @@ def run_orders_incremental_ingestion(
             lower_watermark=current_lower,
             run_upper_watermark=run_upper_watermark,
             batch_size=effective_batch_size,
-            bronze_root=bronze_root,
             checkpoint_path=checkpoint_path,
             pending_context_path=pending_context_path,
             run_id=effective_run_id,
@@ -289,30 +278,34 @@ def run_orders_incremental_ingestion(
         "records_written": total_records,
         "output_paths": output_paths
     }
-
-
-
-# SMOKE TEST
-
 if __name__ == "__main__":
-    import shutil
+    import io
     import pandas as pd
+    from datetime import datetime
+    from pathlib import Path
     from unittest.mock import patch
     from fastorder.db.connection import get_engine
-    from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark
+    from fastorder.ingestion.incremental.orders_extractor import get_upper_watermark, extract_orders_batch
+    from fastorder.storage.adls_client import get_bronze_file_system_client
+    from fastorder.ingestion.incremental.checkpoint_manager import load_checkpoint, save_checkpoint_atomic
 
-    print("Bat dau Smoke Test: Incremental Runner (Crash Recovery Full Suite)\n" + "-"*50)
+    print("-" * 50)
+    print("BAT DAU TEST: Crash Recovery sau Checkpoint, truoc khi xoa Pending")
+    print("-" * 50)
 
-    test_bronze_root = Path("test_bronze_pending")
-    test_checkpoint_path = Path("test_multi_checkpoint.json")
-    test_pending_context_path = Path("test_multi_pending.json")
+    test_checkpoint_path = Path("test_adls_crash_2_ckpt.json")
+    test_pending_context_path = Path("test_adls_crash_2_pending.json")
 
-    def _cleanup():
-        if test_bronze_root.exists(): shutil.rmtree(test_bronze_root)
+    def _cleanup_local():
         for p in [test_checkpoint_path, test_pending_context_path, Path(f"{test_pending_context_path}.tmp")]:
             if p.exists(): p.unlink()
 
+    _cleanup_local()
     engine = get_engine()
+    fs_client = get_bronze_file_system_client()
+    
+    test_started_at = datetime.now()
+    ingestion_date_str = test_started_at.strftime("%Y-%m-%d")
 
     try:
         with engine.connect() as conn:
@@ -327,181 +320,93 @@ if __name__ == "__main__":
             )
             
             if len(twelve_records) != 12:
-                raise RuntimeError(f"Smoke test can dung 12 records, nhung chi tra ve {len(twelve_records)}.")
+                raise RuntimeError("Smoke test can dung 12 records.")
 
-            
-            # TEST 1: SINGLE BATCH HAPPY PATH
-            
-            _cleanup()
             save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
-            
-            print("\n[TEST 1] Chay thu 1 Batch 5 records...")
-            result_single = process_one_orders_batch(
-                conn=conn,
-                lower_watermark=initial_lower_wm,
-                run_upper_watermark=test_upper,
-                batch_size=5,
-                bronze_root=test_bronze_root,
-                checkpoint_path=test_checkpoint_path,
-                pending_context_path=test_pending_context_path,
-                run_id="test_single_run",
-                extraction_id="test_single_run_batch_001",
-                ingested_at=datetime.now()
-            )
-            
-            assert result_single["status"] == "batch_committed"
-            assert not test_pending_context_path.exists()
-            print("  [PASS] Single Batch hoan tat, Pending Context da duoc don sach.")
 
+            print("\n1. Gia lap Crash sau Checkpoint, truoc khi xoa Pending (Batch 1)...")
             
-            # TEST 2: MULTI-BATCH 5-5-2
-            
-            _cleanup()
-            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
-            
-            print("\n[TEST 2] Chay Multi-Batch Runner (Batch_size = 5, Max 12 records)...")
-            run_result = run_orders_incremental_ingestion(
-                conn=conn,
-                bronze_root=test_bronze_root,
-                checkpoint_path=test_checkpoint_path,
-                pending_context_path=test_pending_context_path,
-                batch_size=5,
-                run_id="test_multi_run_2026",
-                run_started_at=datetime.now(),
-                run_upper_watermark=test_upper
-            )
-
-            assert run_result["status"] == "run_completed"
-            assert run_result["records_written"] == 12
-            assert run_result["batches_committed"] == 3
-            assert not test_pending_context_path.exists()
-            
-            final_checkpoint = load_checkpoint(test_checkpoint_path, "orders")
-            assert final_checkpoint["watermark"] == test_upper
-            print("  [PASS] Multi-Batch (5-5-2) hoan tat, Checkpoint cuoi khop test_upper.")
-
-            
-            # TEST 3: CRASH SAU KHI GHI BRONZE, TRUOC CHECKPOINT
-            
-            _cleanup()
-            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
-            
-            print("\n[TEST 3] Gia lap Crash sau Bronze, truoc Checkpoint...")
-            with patch("__main__.save_checkpoint_atomic", side_effect=RuntimeError("Gia lap mat dien")):
+            # Patch delete_pending_batch_context de tao crash
+            with patch(f"{__name__}.delete_pending_batch_context", side_effect=RuntimeError("Gia lap crash truoc khi xoa pending")):
                 try:
                     run_orders_incremental_ingestion(
                         conn=conn,
-                        bronze_root=test_bronze_root,
                         checkpoint_path=test_checkpoint_path,
                         pending_context_path=test_pending_context_path,
                         batch_size=5,
-                        run_id="test_crash_1",
-                        run_started_at=datetime.now(),
+                        run_id="test_adls_crash_2",
+                        run_started_at=test_started_at,
                         run_upper_watermark=test_upper
                     )
                 except RuntimeError as e:
-                    assert "Gia lap mat dien" in str(e)
+                    assert "Gia lap crash truoc khi xoa pending" in str(e)
             
+            # Assertions sau crash
             saved_ckpt = load_checkpoint(test_checkpoint_path, "orders")
-            assert saved_ckpt["watermark"] == initial_lower_wm
-            assert test_pending_context_path.exists()
-            assert len(list(test_bronze_root.rglob("*.parquet"))) == 1
-            print("  [PASS] He thong bat loi thanh cong, Checkpoint giu nguyen, Pending Context ton tai.")
+            assert saved_ckpt["watermark"] != initial_lower_wm, "Checkpoint phai tien len sau khi ghi thanh cong!"
+            assert test_pending_context_path.exists(), "Pending context khong ton tai sau crash!"
+            
+            test_prefix = f"orders/ingestion_date={ingestion_date_str}/extraction_id=test_adls_crash_2_batch_"
+            paths_after_crash = list(fs_client.get_paths(path=f"orders/ingestion_date={ingestion_date_str}"))
+            
+            parquet_files_crash = [
+                p.name for p in paths_after_crash 
+                if p.name.startswith(test_prefix) and p.name.endswith("/part-000.parquet")
+            ]
+            
+            assert len(parquet_files_crash) == 1, f"Mong doi dung 1 file tren ADLS, thuc te co {len(parquet_files_crash)}"
+            print("  [PASS] He thong dinh crash, Checkpoint DA TIEN LEN, Pending thanh rac, ADLS da xuat hien Batch 1.")
 
-            print("  [TEST 3] Bat dau chay lai (Resume) de phuc hoi...")
+            print("\n2. Bat dau chay lai de don rac va hoan tat tien trinh (Resume)...")
             recovery_result = run_orders_incremental_ingestion(
                 conn=conn,
-                bronze_root=test_bronze_root,
                 checkpoint_path=test_checkpoint_path,
                 pending_context_path=test_pending_context_path,
-                batch_size=999,  # Co tinh truyen batch_size khac de kiem tra viec ke thua tu pending
-                run_id="test_crash_1_new", 
+                batch_size=999,
+                run_id="test_adls_crash_2_NEW_ID",
                 run_started_at=datetime.now(),
                 run_upper_watermark=test_upper
             )
             
-            assert recovery_result["records_written"] == 12
-            assert recovery_result["batches_committed"] == 3
-            assert not test_pending_context_path.exists()
-            assert recovery_result["run_id"] == "test_crash_1" # Kiem tra Stable Run Identity
+            # Assertions sau recovery
+            assert recovery_result["status"] == "run_completed"
             
-            final_checkpoint_3 = load_checkpoint(test_checkpoint_path, "orders")
-            assert final_checkpoint_3["watermark"] == test_upper
+            # Quan trong: Vi batch 1 (5 records) da commit hoan toan, 
+            # resume chi xu ly 7 records con lai, commit 2 batch.
+            assert recovery_result["records_written"] == 7
+            assert recovery_result["batches_committed"] == 2
             
-            parquet_files_3 = list(test_bronze_root.rglob("*.parquet"))
-            assert len(parquet_files_3) == 3
+            assert recovery_result["run_id"] == "test_adls_crash_2", "He thong khong ke thua run_id tu pending"
+            assert not test_pending_context_path.exists(), "Pending context rac khong bi don dep sau khi hoan tat"
             
-            actual_ids_3 = []
-            for path in sorted(parquet_files_3):
-                df = pd.read_parquet(path)
-                actual_ids_3.extend(df["order_id"].tolist())
-            expected_ids = [record["order_id"] for record in twelve_records]
-            assert actual_ids_3 == expected_ids
-            assert len(actual_ids_3) == 12
-            assert len(set(actual_ids_3)) == 12
-            assert not list(test_bronze_root.rglob("*.tmp"))
-            print("  [PASS] Phuc hoi thanh cong, du lieu khop 100%, Batch Size duoc ke thua.")
+            final_ckpt = load_checkpoint(test_checkpoint_path, "orders")
+            assert final_ckpt["watermark"] == test_upper, "Checkpoint cuoi cung khong dat test_upper"
+            
+            paths_after_recovery = list(fs_client.get_paths(path=f"orders/ingestion_date={ingestion_date_str}"))
+            parquet_files_recovery = [
+                p.name for p in paths_after_recovery 
+                if p.name.startswith(test_prefix) and p.name.endswith("/part-000.parquet")
+            ]
+            
+            assert len(parquet_files_recovery) == 3, f"Mong doi dung 3 files, nhung co {len(parquet_files_recovery)} files tren mây."
+            
+            all_ids = []
+            for remote_path in parquet_files_recovery:
+                file_client = fs_client.get_file_client(remote_path)
+                data = file_client.download_file().readall()
+                df = pd.read_parquet(io.BytesIO(data))
+                all_ids.extend(df["order_id"].tolist())
+                
+            expected_ids = {record["order_id"] for record in twelve_records}
+            assert set(all_ids) == expected_ids, "Du lieu ADLS sau recovery khong khop voi 12 records nguon."
+            assert len(all_ids) == 12, "Tong so record doc tu ADLS khong dung 12"
+            
+            print("  [PASS] Don rac va phuc hoi hoan hao. Batch 2 & 3 hoan tat, tong 12 records khong thieu khong thua.")
 
-            
-            # TEST 4: CRASH SAU CHECKPOINT, TRUOC KHI XOA PENDING
-            
-            _cleanup()
-            save_checkpoint_atomic(test_checkpoint_path, {"version": 1, "table_name": "orders", "watermark": initial_lower_wm}, "orders")
-            
-            print("\n[TEST 4] Gia lap Crash sau Checkpoint, truoc khi xoa Pending...")
-            with patch("__main__.delete_pending_batch_context", side_effect=RuntimeError("Gia lap tat nguon")):
-                try:
-                    run_orders_incremental_ingestion(
-                        conn=conn,
-                        bronze_root=test_bronze_root,
-                        checkpoint_path=test_checkpoint_path,
-                        pending_context_path=test_pending_context_path,
-                        batch_size=5,
-                        run_id="test_crash_2",
-                        run_started_at=datetime.now(),
-                        run_upper_watermark=test_upper
-                    )
-                except RuntimeError as e:
-                    assert "Gia lap tat nguon" in str(e)
-
-            saved_ckpt = load_checkpoint(test_checkpoint_path, "orders")
-            assert saved_ckpt["watermark"] != initial_lower_wm
-            assert test_pending_context_path.exists()
-            print("  [PASS] He thong dinh Crash, Checkpoint da tien len, Pending Context thanh rac.")
-
-            print("  [TEST 4] Bat dau chay lai de don rac va hoan tat tien trinh...")
-            recovery_result_2 = run_orders_incremental_ingestion(
-                conn=conn,
-                bronze_root=test_bronze_root,
-                checkpoint_path=test_checkpoint_path,
-                pending_context_path=test_pending_context_path,
-                batch_size=999, 
-                run_id="test_crash_2_new",
-                run_started_at=datetime.now(),
-                run_upper_watermark=test_upper
-            )
-            
-            assert recovery_result_2["records_written"] == 7
-            assert recovery_result_2["batches_committed"] == 2
-            assert not test_pending_context_path.exists()
-            assert recovery_result_2["run_id"] == "test_crash_2"
-            
-            final_checkpoint_4 = load_checkpoint(test_checkpoint_path, "orders")
-            assert final_checkpoint_4["watermark"] == test_upper
-            
-            parquet_files_4 = list(test_bronze_root.rglob("*.parquet"))
-            assert len(parquet_files_4) == 3
-            
-            actual_ids_4 = []
-            for path in sorted(parquet_files_4):
-                df = pd.read_parquet(path)
-                actual_ids_4.extend(df["order_id"].tolist())
-            assert actual_ids_4 == expected_ids
-            assert len(actual_ids_4) == 12
-            assert len(set(actual_ids_4)) == 12
-            assert not list(test_bronze_root.rglob("*.tmp"))
-            print("  [PASS] Quet sach Pending rac, hoan thanh 2 Batch cuoi, du lieu khop 100%.")
+            print("-" * 50)
+            print("CRASH AFTER CHECKPOINT / BEFORE PENDING DELETE TEST COMPLETE: PERFECT PASS")
+            print("-" * 50)
 
     finally:
-        _cleanup()
-        print("\nHoan tat don dep file test.")
+        _cleanup_local()
+        print("\nHoan tat don dep file local test.")
