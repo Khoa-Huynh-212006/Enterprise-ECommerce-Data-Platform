@@ -2,7 +2,7 @@
     "version": 1,
     "table_name": "orders",
     "watermark": {
-        "updated_at": "2026-08-07T12:11:53.725728",
-        "order_id": "dbfc241d2e8e4a16b7ca8d90c885a20d"
+        "updated_at": "2026-08-07T12:13:54.331000",
+        "order_id": "dd30382f3e14453bb171ceb8fe7992c8"
     }
 }
