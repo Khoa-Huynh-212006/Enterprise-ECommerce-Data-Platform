@@ -473,3 +473,20 @@ order_reviews
 
 **Kết quả**
 - Local Airflow Incremental Ingestion MVP: COMPLETE. Hệ thống Ingestion đã chứng minh được sự trơn tru với dữ liệu thật.
+
+## Mốc 19 — End-to-End Operational Validation (Local Airflow MVP Complete)
+
+### 2026-08-10
+
+**Mục tiêu**
+- Chứng minh tính đúng đắn của toàn bộ chuỗi Pipeline Ingestion trên môi trường Airflow với dữ liệu thay đổi thực tế từ PostgreSQL.
+
+**Đã thực hiện**
+- Chạy thành công kịch bản Initial Ingestion (Vét cạn dữ liệu lịch sử).
+- Chạy thành công kịch bản No-new-data rerun (Bảo vệ Data Lake khỏi file rác).
+- Chạy thành công kịch bản New source delta (Bắt chính xác dữ liệu mới sinh ra từ Simulator).
+- Nghiệm thu tính năng Crash Recovery và Composite Checkpoint trong môi trường vận hành thực tế.
+
+**Kết quả**
+- Local Airflow Incremental Ingestion MVP: COMPLETE. 
+- Chuẩn bị bước sang Phase: ADLS Bronze Integration.

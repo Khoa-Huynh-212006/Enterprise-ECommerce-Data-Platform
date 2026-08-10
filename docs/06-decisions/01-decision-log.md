@@ -265,3 +265,14 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Đảm bảo tính Deterministic của tiến trình khi chạy trên Airflow. `run_id` mặc định của Airflow chứa các ký tự đặc biệt có thể phá hỏng tiến trình ghi file Parquet trên môi trường Windows bind mount.
 *   Bảo vệ Data Pipeline khỏi tình trạng chạy thành công giả (Fake success) khi mount bị lỗi, giúp phát hiện sớm các vấn đề về cơ sở hạ tầng.
+
+## D-023 — Hoàn tất Local Airflow MVP và Tiếp cận ADLS theo hướng Probe-First
+
+**Date:** 2026-08-10
+**Decision:**
+*   Chính thức nghiệm thu giai đoạn Local Airflow Incremental Ingestion MVP sau khi PASS 3 kịch bản E2E.
+*   Bước tiếp theo là tích hợp Azure Data Lake Storage (ADLS Gen2) cho tầng Bronze.
+*   Quyết định áp dụng chiến lược "Probe-First": Xây dựng và test độc lập module `adls_client.py` để xác thực Azure Authentication và quyền I/O trước khi tích hợp vào Bronze Writer và Incremental Runner.
+
+**Reason:**
+*   Việc phân lập hạ tầng (Infrastructure Isolation) giúp tách bạch các lỗi liên quan đến Mạng/Bảo mật (Azure Auth, RBAC) khỏi các lỗi liên quan đến Data Logic (Runner, Airflow DAG). Nếu hệ thống crash, ta biết chính xác nguyên nhân nằm ở Data Layer hay Transport Layer.

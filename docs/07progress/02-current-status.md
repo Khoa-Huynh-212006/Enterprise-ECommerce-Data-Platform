@@ -1,7 +1,6 @@
 # Current Project Status
-
 **As of:** 2026-08-10
-**Current phase:** ADLS Bronze Integration (Next Phase)
+**Current phase:** ADLS Bronze Integration
 
 ## Executive summary
 
@@ -74,18 +73,15 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 - Chưa có Bronze/Silver/Gold implementation[cite: 3].
 
 ## Current phase gate
-Giai đoạn Local Incremental Ingestion MVP (PostgreSQL -> Local Bronze qua Airflow) đã chính thức hoàn thành toàn diện. Kiến trúc đã chứng minh được tính ổn định, tự phục hồi và bảo toàn dữ liệu 100%.
+Giai đoạn Local Airflow Incremental Ingestion MVP đã chính thức đóng lại với kết quả PASS toàn bộ các bài test E2E. Hệ thống đã sẵn sàng để thay thế Local Storage bằng Cloud Storage.
 
 Các hạng mục đã hoàn tất:
-10. Chốt Orders Incremental Source Contract - COMPLETE
-11. Xây dựng Checkpoint Manager (Atomic JSON File) - COMPLETE
-12. Design and implement Orders Incremental Extractor - COMPLETE
 13. Xây dựng Bronze Parquet Writer (Idempotent atomic write) - COMPLETE
 14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - COMPLETE
 15. Local End-to-End Operational Validation - COMPLETE
 16. Chuyển đổi và cấu hình Airflow DAG cho Incremental Runner - COMPLETE
 
 Mục tiêu tiếp theo (Next Phase):
-17. Tích hợp Azure Data Lake Storage (ADLS Gen2) cho Bronze Layer.
-18. Thay thế logic ghi file Parquet từ Local Storage sang ADLS (Giữ nguyên toàn bộ logic Orchestration, Extractor và Checkpoint).
-
+17. Khởi tạo `adls_client.py` và thực hiện Connection Probe (Authentication & Base I/O).
+18. Tích hợp ADLS Gen2 Client vào Bronze Writer (Thay thế Local Path).
+19. Cập nhật Ingestion Runner và Airflow DAG để truyền cấu hình Azure credentials một cách bảo mật.
