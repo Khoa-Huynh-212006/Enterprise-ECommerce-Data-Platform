@@ -1,7 +1,7 @@
 # Current Project Status
 
-**As of:** 07/08/2026
-**Current phase:** Incremental Runner & Crash Recovery COMPLETE.
+**As of:** 2026-08-10
+**Current phase:** ADLS Bronze Integration (Next Phase)
 
 ## Executive summary
 
@@ -74,30 +74,18 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 - Chưa có Bronze/Silver/Gold implementation[cite: 3].
 
 ## Current phase gate
+Giai đoạn Local Incremental Ingestion MVP (PostgreSQL -> Local Bronze qua Airflow) đã chính thức hoàn thành toàn diện. Kiến trúc đã chứng minh được tính ổn định, tự phục hồi và bảo toàn dữ liệu 100%.
 
-Hệ thống Local Bronze Layer (PostgreSQL -> Parquet) đã hoàn thành toàn bộ cốt lõi. Sẵn sàng chuyển sang giai đoạn đóng gói Airflow Orchestration và chuyển đổi sang Azure Data Lake Storage (ADLS).
-
-
-1. Đối chiếu row count CSV và PostgreSQL - **COMPLETE**
-2. Kiểm tra orphan FK bằng SQL - **COMPLETE**
-3. Kiểm tra NULL ở các cột bắt buộc - **COMPLETE**
-4. Warehouse design and seed - **COMPLETE**
-5. Inventory design and seed - **COMPLETE**
-6. Inventory validation - **COMPLETE**
-7. Faker simulator design (State machine, Quantity, Payment logic) - **COMPLETE**
-8. Faker simulator implementation (CREATE_ORDER event) - **COMPLETE**
-9. Mở rộng Simulator chạy Batch (Runner Bounded & Continuous mode) - **COMPLETE** 
-10. Chốt Orders Incremental Source Contract (Composite watermark, Not Null enforcement) - **COMPLETE**
-11. Xây dựng Checkpoint Manager (Atomic JSON File) - **COMPLETE**
-12. Design and implement Orders Incremental Extractor - **COMPLETE**
-13. Xây dựng Bronze Parquet Writer (Idempotent atomic write, Metadata injection) - **COMPLETE**
-14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - **COMPLETE**
-Mục tiêu tiếp theo (Next Phase):
+Các hạng mục đã hoàn tất:
+10. Chốt Orders Incremental Source Contract - COMPLETE
+11. Xây dựng Checkpoint Manager (Atomic JSON File) - COMPLETE
+12. Design and implement Orders Incremental Extractor - COMPLETE
+13. Xây dựng Bronze Parquet Writer (Idempotent atomic write) - COMPLETE
+14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - COMPLETE
 15. Local End-to-End Operational Validation - COMPLETE
+16. Chuyển đổi và cấu hình Airflow DAG cho Incremental Runner - COMPLETE
+
 Mục tiêu tiếp theo (Next Phase):
-16. Chuyển đổi và cấu hình Airflow DAG cho Incremental Runner.
-17. Tích hợp Azure Data Lake Storage (ADLS Gen2) để thay thế hệ thống Local Path.
-
-
-
+17. Tích hợp Azure Data Lake Storage (ADLS Gen2) cho Bronze Layer.
+18. Thay thế logic ghi file Parquet từ Local Storage sang ADLS (Giữ nguyên toàn bộ logic Orchestration, Extractor và Checkpoint).
 

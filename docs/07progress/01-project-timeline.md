@@ -457,3 +457,19 @@ order_reviews
 
 **Kết quả**
 - Local Incremental Ingestion MVP: COMPLETE.
+
+## Mốc 18 — Local Airflow Incremental Ingestion MVP
+
+### 2026-08-10
+
+**Mục tiêu**
+- Đưa Incremental Runner lên Airflow DAG và chứng minh tính đúng đắn của toàn bộ chuỗi Pipeline End-to-End trên môi trường containerized.
+
+**Đã thực hiện**
+- Viết `orders_incremental_ingestion_dag.py` với cấu hình schedule manual và `max_active_runs=1`.
+- Thiết lập cơ chế Sanitize Airflow Run ID đảm bảo an toàn cho File System.
+- Áp dụng Fail-Fast validation cho các thư mục mount của Docker.
+- Hoàn tất kiểm thử thực tế các kịch bản: Initial Ingestion, No-New-Data Rerun, và trích xuất Dữ liệu Delta.
+
+**Kết quả**
+- Local Airflow Incremental Ingestion MVP: COMPLETE. Hệ thống Ingestion đã chứng minh được sự trơn tru với dữ liệu thật.

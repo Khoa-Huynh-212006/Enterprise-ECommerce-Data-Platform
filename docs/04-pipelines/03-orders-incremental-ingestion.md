@@ -22,3 +22,11 @@ Hệ thống có khả năng tự động khôi phục dữ liệu ở bất k�
 | Sau Pending, trước khi ghi Bronze | Có Pending, chưa có Parquet | Đọc Pending Context, chạy lại batch với đúng boundaries và ghi Parquet mới. |
 | Sau khi ghi Bronze, trước Checkpoint | Có Pending, có Parquet, Checkpoint cũ | Đọc Pending Context, chạy lại batch, ghi đè Parquet (Idempotent), tiến Checkpoint. |
 | Sau Checkpoint, trước khi xóa Pending | Có Pending (thành rác), có Parquet, Checkpoint mới | Phát hiện Checkpoint đã tiến. Xóa bỏ file Pending rác và chạy batch tiếp theo. |
+
+## 4. Airflow Orchestration
+Tiến trình Ingestion được điều phối toàn diện thông qua Apache Airflow (DAG: `incremental_orders_dag`).
+*   **Stable Run Identity:** Sử dụng `dag_run.start_date` làm `run_started_at` và làm sạch `dag_run.run_id` (Sanitize) để loại bỏ các ký tự không an toàn cho File System (như `:`, `+`). Điều này đảm bảo tính Deterministic cho việc tạo `extraction_id` và Crash Recovery.
+*   **Mount Protection:** Các đường dẫn volume mount (Bronze, Checkpoint, Pending) được bảo vệ bằng cơ chế Fail-Fast, ngăn chặn việc vô tình sinh dữ liệu rác bên trong container nếu cấu hình mount bị lỗi.
+
+## 5. Storage Backend (Next Phase)
+Kiến trúc hiện tại đã hoàn thiện End-to-End MVP với Local File System (Bronze Parquet). Giai đoạn tiếp theo sẽ tích hợp Azure Data Lake Storage (ADLS Gen2) để thay thế Local Path, trong khi vẫn bảo toàn nguyên vẹn toàn bộ logic Orchestration, Extractor, Checkpoint và Crash Recovery.

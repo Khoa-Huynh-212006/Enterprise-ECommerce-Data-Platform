@@ -253,3 +253,15 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 * Đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) không bị biến đổi xuyên suốt các lần restart.
 * Việc tự động bỏ qua lỗi của file trạng thái (như file bị rỗng do I/O error) có thể dẫn đến hậu quả nghiêm trọng như kéo lại toàn bộ lịch sử dữ liệu (Disaster Risk) hoặc ghi đè sai batch. Con người phải can thiệp khi State files bị hỏng.
+
+## D-022 — Sử dụng Airflow Context cho Stable Run Identity và Fail-Fast Mount Guards
+
+**Date:** 2026-08-10
+**Decision:**
+*   Sử dụng `dag_run.start_date` thay vì `logical_date` để biểu diễn chính xác thời điểm thực sự bắt đầu tiến trình Ingestion.
+*   Làm sạch (Sanitize) `dag_run.run_id` thành định dạng an toàn cho File System trước khi dùng để tạo `extraction_id`.
+*   Sử dụng cơ chế Fail-Fast (raise Exception) thay vì tự động `mkdir()` cho các đường dẫn dữ liệu trong container.
+
+**Reason:**
+*   Đảm bảo tính Deterministic của tiến trình khi chạy trên Airflow. `run_id` mặc định của Airflow chứa các ký tự đặc biệt có thể phá hỏng tiến trình ghi file Parquet trên môi trường Windows bind mount.
+*   Bảo vệ Data Pipeline khỏi tình trạng chạy thành công giả (Fake success) khi mount bị lỗi, giúp phát hiện sớm các vấn đề về cơ sở hạ tầng.
