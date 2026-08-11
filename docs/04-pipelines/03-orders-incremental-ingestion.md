@@ -23,11 +23,13 @@ Hệ thống có khả năng tự động khôi phục dữ liệu ở bất k�
 | Sau khi ghi Bronze, trước Checkpoint | Có Pending, có Parquet, Checkpoint cũ | Đọc Pending Context, chạy lại batch, ghi đè Parquet (Idempotent), tiến Checkpoint. |
 | Sau Checkpoint, trước khi xóa Pending | Có Pending (thành rác), có Parquet, Checkpoint mới | Phát hiện Checkpoint đã tiến. Xóa bỏ file Pending rác và chạy batch tiếp theo. |
 
-## 4. Airflow Orchestration
-Tiến trình Ingestion được điều phối toàn diện thông qua Apache Airflow, đảm bảo tính Deterministic qua cơ chế Sanitize Run ID và Fail-Fast Mount Guards. Hệ thống đã vượt qua bộ kiểm định End-to-End (E2E) Operational Validation với 3 kịch bản thực tế:
-1.  **Initial Incremental Load:** Xử lý thành công toàn bộ backlog dữ liệu khi chưa có Checkpoint (bắt đầu từ mốc `1970-01-01`).
-2.  **Immediate Rerun (No New Data):** Nhận diện chính xác trạng thái không có dữ liệu mới, không sinh thêm file Parquet rác, không làm phình Data Lake.
-3.  **New Source Delta:** Nắm bắt chuẩn xác các thay đổi mới từ DB (Insert/Update) dựa trên composite watermark, tịnh tiến Checkpoint an toàn và chỉ ghi đúng dữ liệu Delta.
+## 4. Airflow Orchestration & End-to-End Validation
+Tiến trình Ingestion được điều phối toàn diện thông qua Apache Airflow (DAG: `incremental_orders_dag`).
+*   **Stable Run Identity:** Sử dụng `dag_run.start_date`, sanitize `run_id` để đảm bảo an toàn trên File System và đảm bảo tính Deterministic.
+*   **Timezone-Aware Partitioning:** Thời gian `start_date` (UTC mặc định của Airflow) được convert chuẩn xác về múi giờ `Asia/Ho_Chi_Minh` trước khi đưa vào hàm tính toán `ingestion_date`. Điều này đảm bảo thư mục partition trên ADLS (ví dụ: `ingestion_date=2026-08-11`) phản ánh đúng ngày nghiệp vụ của hệ thống.
+*   **E2E Validation:** Hệ thống đã chứng minh độ tin cậy qua 4 kịch bản tích hợp hoàn chỉnh (No-data rerun, Simulator delta ingestion) với ADLS Gen2.
 
-## 5. Storage Backend (Next Phase)
-Kiến trúc hiện tại đã hoàn thiện End-to-End MVP với Local File System (Bronze Parquet). Giai đoạn tiếp theo sẽ tích hợp Azure Data Lake Storage (ADLS Gen2) để thay thế Local Path, trong khi vẫn bảo toàn nguyên vẹn toàn bộ logic Orchestration, Extractor, Checkpoint và Crash Recovery.
+## 5. Storage Backend (ADLS Gen2)
+Toàn bộ dữ liệu Bronze Layer được lưu trữ trên Azure Data Lake Storage Gen2 dưới định dạng Parquet.
+*   Quá trình upload sử dụng trực tiếp in-memory stream (`io.BytesIO`) qua `DataLakeFileClient.upload_data()` kết hợp `overwrite=True` để đáp ứng triết lý Idempotent.
+*   Bảo mật: Connection/Credentials được quản lý hoàn toàn độc lập thông qua biến môi trường của Worker, tách biệt tuyệt đối khỏi mã nguồn DAG và Ingestion Runner.

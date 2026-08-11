@@ -2,6 +2,7 @@ import json
 import re
 from pathlib import Path
 from pendulum import datetime
+from zoneinfo import ZoneInfo
 
 from airflow.sdk import dag, task, get_current_context
 
@@ -37,7 +38,8 @@ def incremental_orders_dag():
 
         raw_run_id = dag_run.run_id
         safe_run_id = _sanitize_run_id(raw_run_id)
-        run_started_at = dag_run.start_date.replace(tzinfo=None)
+        vn_start_date = dag_run.start_date.astimezone(ZoneInfo("Asia/Ho_Chi_Minh"))
+        run_started_at = vn_start_date.replace(tzinfo=None)
 
         airflow_home = Path("/opt/airflow")
         

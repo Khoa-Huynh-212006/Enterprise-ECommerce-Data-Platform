@@ -490,3 +490,22 @@ order_reviews
 **Kết quả**
 - Local Airflow Incremental Ingestion MVP: COMPLETE. 
 - Chuẩn bị bước sang Phase: ADLS Bronze Integration.
+
+## Mốc 20 — ADLS Gen2 Bronze Integration & Full E2E Validation
+
+### 2026-08-11
+
+**Mục tiêu**
+- Thay thế triệt để Local Bronze Storage bằng Azure Data Lake Storage Gen2.
+- Kiểm định năng lực phục hồi hệ thống (Crash Recovery) trên hạ tầng Cloud.
+
+**Đã thực hiện**
+- Thiết kế `adls_bronze_writer.py` khai thác tối đa sức mạnh ghi in-memory (`io.BytesIO`) và tính năng overwrite của Azure SDK.
+- Vượt qua chuỗi bài test Idempotency và Single/Multi-batch Integration trực tiếp trên mây.
+- Giả lập thành công 2 case Crash Recovery chí mạng: Crash sau ADLS/trước Checkpoint và Crash sau Checkpoint/trước khi xóa Pending.
+- Sửa lỗi lệch ngày Ingestion Partition bằng cách convert `Asia/Ho_Chi_Minh` timezone từ DAG.
+- Hoàn tất bộ 4 bài test E2E thực tế trên Airflow UI.
+
+**Kết quả**
+- Milestone LOCAL AIRFLOW → ADLS GEN2 BRONZE INCREMENTAL INGESTION MVP: CHÍNH THỨC HOÀN TẤT.
+- Đóng băng code cho module Ingestion Layer.

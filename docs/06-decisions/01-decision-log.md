@@ -276,3 +276,21 @@ fastorder/db/  → connection.py, init_db.py
 
 **Reason:**
 *   Việc phân lập hạ tầng (Infrastructure Isolation) giúp tách bạch các lỗi liên quan đến Mạng/Bảo mật (Azure Auth, RBAC) khỏi các lỗi liên quan đến Data Logic (Runner, Airflow DAG). Nếu hệ thống crash, ta biết chính xác nguyên nhân nằm ở Data Layer hay Transport Layer.
+
+## D-024 — Chuyển đổi Timezone trong DAG trước khi sinh Partition
+
+**Date:** 2026-08-11
+**Decision:**
+*   Convert `dag_run.start_date` từ chuẩn UTC (Airflow default) sang múi giờ nghiệp vụ (`Asia/Ho_Chi_Minh`), sau đó mới gỡ bỏ timezone (naive datetime) để truyền vào Incremental Runner.
+
+**Reason:**
+*   Đảm bảo metadata partitioning trên ADLS (`ingestion_date=YYYY-MM-DD`) đồng nhất tuyệt đối với ngày vận hành kinh doanh (Business Convention) tại Việt Nam. Nếu chỉ gọi `.replace(tzinfo=None)` trên UTC time, dữ liệu của phiên chạy đầu ngày tại VN có thể bị rơi nhầm vào partition của ngày hôm trước do lệch múi giờ.
+
+## D-025 — Cleanup Bronze Root và Giao phó I/O cho ADLS Client
+
+**Date:** 2026-08-11
+**Decision:**
+*   Xóa bỏ tham số `bronze_root` xuyên suốt toàn bộ Ingestion Runner và Orchestration DAG, đẩy việc cấu hình URL/Path về tay ADLS Client và biến môi trường.
+
+**Reason:**
+*   Loại bỏ dư thừa kỹ thuật (Tech Debt) của giai đoạn Local MVP, đảm bảo kiến trúc tuân thủ nguyên tắc Separation of Concerns. DAG và Runner không cần quan tâm Storage vật lý nằm ở đâu.

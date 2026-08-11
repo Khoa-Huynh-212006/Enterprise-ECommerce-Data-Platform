@@ -1,7 +1,6 @@
 # Current Project Status
-**As of:** 2026-08-10
-**Current phase:** ADLS Bronze Integration
-
+**As of:** 2026-08-11
+**Current phase:** Silver Layer Integration (Apache Spark)
 ## Executive summary
 
 FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. Olist CSV đã được nạp thành công vào PostgreSQL thông qua schema do project kiểm soát. Project chưa bước vào simulator hoặc Airflow incremental ingestion.
@@ -80,8 +79,12 @@ Các hạng mục đã hoàn tất:
 14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - COMPLETE
 15. Local End-to-End Operational Validation - COMPLETE
 16. Chuyển đổi và cấu hình Airflow DAG cho Incremental Runner - COMPLETE
+17. Khởi tạo `adls_client.py` và thực hiện Connection Probe (Authentication & Base I/O) - COMPLETE
+18. Tích hợp ADLS Gen2 Client vào Bronze Writer (Thay thế Local Path) - COMPLETE
+19. Crash Recovery Testing với Storage Mây (Crash after ADLS, Crash after Checkpoint) - COMPLETE
+20. Airflow E2E Validation và Fix Timezone bug - COMPLETE
 
 Mục tiêu tiếp theo (Next Phase):
-17. Khởi tạo `adls_client.py` và thực hiện Connection Probe (Authentication & Base I/O).
-18. Tích hợp ADLS Gen2 Client vào Bronze Writer (Thay thế Local Path).
-19. Cập nhật Ingestion Runner và Airflow DAG để truyền cấu hình Azure credentials một cách bảo mật.
+21. Thiết lập môi trường Apache Spark (Local/Containerized).
+22. Xây dựng Data Quality Checks cho quá trình di chuyển dữ liệu từ Bronze sang Silver.
+23. Thiết kế bảng Orders Silver với ACID propertie

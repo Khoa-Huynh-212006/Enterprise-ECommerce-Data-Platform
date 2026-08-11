@@ -116,3 +116,20 @@ docker compose down
 ```
 
 Không dùng `-v` nếu không muốn xóa volume.
+
+
+## 9. Môi trường Airflow (Docker)
+Các lệnh vận hành cơ bản để tương tác với DAG Ingestion tại Local:
+*   **Kiểm tra DAG parse hợp lệ:** 
+    `docker compose exec airflow-scheduler airflow dags list | Select-String "incremental_orders_dag"`
+*   **Kích hoạt DAG thủ công (CLI):** 
+    `docker compose exec airflow-scheduler airflow dags trigger incremental_orders_dag`
+
+## 10. Yêu cầu Cấu hình Tích hợp Azure (ADLS)
+Quá trình ghi dữ liệu lên Bronze Layer yêu cầu kết nối với Azure Data Lake.
+*   Tuyệt đối **không** hardcode credentials vào file Python (DAG hay Runner).
+*   Đảm bảo file `docker/.env` chứa đủ các biến môi trường cấu hình xác thực (VD: `AZURE_STORAGE_CONNECTION_STRING` hoặc `AZURE_CLIENT_SECRET`). Azure SDK sẽ tự động load thông qua `DefaultAzureCredential`.
+
+## 11. Quy trình Xử lý Sự cố Crash Recovery
+Kiến trúc đã được thiết kế để tự động phục hồi.
+*   **Nếu DAG xịt do Network/Azure I/O Error:** Chỉ cần trigger DAG chạy lại (Retry). Runner sẽ tự động Load Pending Context, lấy đúng cấu hình Batch cũ, ghi đè file Parquet lên ADLS một cách an toàn (Idempotent), tiến Checkpoint và tiếp tục luồng dữ liệu mà không gây trùng lặp (Duplicate) hay sinh rác.
