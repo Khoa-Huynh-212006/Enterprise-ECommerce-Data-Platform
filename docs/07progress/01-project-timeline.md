@@ -1,7 +1,7 @@
 # Project Timeline — FastOrder Enterprise E-Commerce Data Platform
 
-**Cập nhật:** 29/07/2026  
-**Trạng thái hiện tại:** Initial Olist bootstrap đã hoàn tất.
+**As of:** 2026-08-13
+**Current phase:** File-Based Ingestion
 
 > Quy ước: Các mốc có ngày chính xác được ghi theo bằng chứng có sẵn. Các mốc không đủ bằng chứng ngày cụ thể được ghi theo khoảng thời gian thay vì tự suy đoán.
 
@@ -509,3 +509,82 @@ order_reviews
 **Kết quả**
 - Milestone LOCAL AIRFLOW → ADLS GEN2 BRONZE INCREMENTAL INGESTION MVP: CHÍNH THỨC HOÀN TẤT.
 - Đóng băng code cho module Ingestion Layer.
+
+## 2026-08-13 — YOOCHOOSE Cloud Preparation Complete
+
+### Objective
+
+Prepare the historical YOOCHOOSE clickstream dataset entirely in Azure
+for the FastOrder file-based ingestion flow.
+
+### Completed
+
+- Bootstrapped `yoochoose-data.7z` from the external provider to ADLS Landing using Azure Data Factory.
+- Configured Databricks access to ADLS Landing using:
+  - Access Connector
+  - Managed Identity
+  - Azure RBAC
+  - Unity Catalog Storage Credential
+  - External Location
+  - External Volumes
+- Extracted only `yoochoose-clicks.dat` using Databricks cloud compute.
+- Persisted the extracted source in the Landing preparation area.
+- Read the complete clickstream using Spark with an explicit source schema.
+- Validated source row count: 33,003,944 records.
+- Parsed and profiled event timestamps.
+- Profiled 183 event dates.
+- Selected daily source organization based on actual data distribution.
+- Wrote prepared clickstream as headerless CSV files organized by `event_date`.
+- Preserved the original four-field source payload.
+- Validated 183 daily directories.
+- Validated prepared payload structure.
+- Read back the complete prepared dataset and confirmed 33,003,944 records.
+
+### Key Result
+
+YOOCHOOSE cloud preparation is complete with no record loss.
+
+### Next Step
+
+Design the file-based incremental ingestion mechanism:
+
+Landing Prepared
+→ File Discovery
+→ File Identity
+→ Manifest
+→ Airflow
+→ ADLS Bronze
+
+
+## Mốc 21 — YOOCHOOSE Cloud Preparation Complete
+
+### 13/08/2026
+
+**Mục tiêu**
+
+- Prepare the historical YOOCHOOSE clickstream dataset entirely in Azure for the FastOrder file-based ingestion flow.
+
+**Đã thực hiện**
+
+- Bootstrapped `yoochoose-data.7z` from the external provider to ADLS Landing using Azure Data Factory.
+- Configured Databricks access to ADLS Landing using: Access Connector, Managed Identity, Azure RBAC, Unity Catalog Storage Credential, External Location, and External Volumes.
+- Extracted only `yoochoose-clicks.dat` using Databricks cloud compute.
+- Persisted the extracted source in the Landing preparation area.
+- Read the complete clickstream using Spark with an explicit source schema.
+- Validated source row count: 33,003,944 records.
+- Parsed and profiled event timestamps.
+- Profiled 183 event dates.
+- Selected daily source organization based on actual data distribution.
+- Wrote prepared clickstream as headerless CSV files organized by `event_date`.
+- Preserved the original four-field source payload.
+- Validated 183 daily directories and prepared payload structure.
+- Read back the complete prepared dataset and confirmed 33,003,944 records.
+
+**Kết quả**
+
+- YOOCHOOSE cloud preparation is complete with no record loss.
+
+**Bước tiếp theo**
+
+- Design the file-based incremental ingestion mechanism: Landing Prepared → File Discovery → File Identity → Manifest → Airflow → 
+

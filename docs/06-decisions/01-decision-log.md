@@ -294,3 +294,76 @@ fastorder/db/  → connection.py, init_db.py
 
 **Reason:**
 *   Loại bỏ dư thừa kỹ thuật (Tech Debt) của giai đoạn Local MVP, đảm bảo kiến trúc tuân thủ nguyên tắc Separation of Concerns. DAG và Runner không cần quan tâm Storage vật lý nằm ở đâu.
+
+## D-026 — Lựa chọn Kiến trúc Cloud-Native File Ingestion và Time-Based Partitioning
+
+**Date:** 2026-08-11
+**Decision:**
+*   **Loại bỏ Local Processing:** Khai tử kiến trúc "Tải file về Laptop -> Xử lý/Split local -> Đẩy lên Cloud". Thay vào đó, áp dụng luồng dữ liệu 100% Cloud-to-Cloud.
+*   **Sử dụng Azure Data Factory (ADF):** Dùng ADF Copy Activity để kéo trực tiếp file gốc (ví dụ: `.7z`) từ External HTTP Endpoint thả thẳng vào thư mục `landing/bootstrap/` trên ADLS Gen2.
+*   **Time-Based Partitioning:** Dữ liệu Clickstream (YOOCHOOSE) sẽ được chuẩn bị (Cloud Preparation) và chia file dựa trên `event_date` thay vì chia theo số dòng cố định (VD: 250k rows/file).
+
+**Reason:**
+*   Việc dùng máy tính cá nhân làm trạm trung chuyển không có khả năng mở rộng (Scalability) và không phản ánh đúng thực tế doanh nghiệp. ADF là công cụ Managed Service tối ưu nhất để chịu tải tác vụ data movement từ bên ngoài vào Cloud Landing Zone.
+*   Dữ liệu thực tế luôn đến theo cửa sổ thời gian (Time window). Phân vùng dữ liệu theo `event_date` sát với nghiệp vụ hơn, đồng thời tối ưu hóa quá trình đọc dữ liệu của Apache Spark ở các layer sau (Bronze -> Silver).
+
+## D-027 — Phân tách trách nhiệm I/O trong File-based Ingestion
+
+**Date:** 2026-08-12
+**Decision:**
+*   Phân định rõ ràng vai trò của 3 hệ thống: ADF (chuyên chở data ngoài vào Landing), Databricks (giải nén, chuẩn bị cấu trúc time-based tại Landing), và Airflow (Ingest từ Landing vào Bronze).
+
+**Reason:**
+*   Ngăn chặn Airflow Worker phải chịu tải các tác vụ không phù hợp (giải nén file gigabytes, xử lý 33 triệu rows). Airflow chỉ nên làm Orchestrator. Trả các tác vụ Heavy Compute (Extract, Partitioning) về cho nền tảng Distributed Compute đúng nghĩa là Spark/Databricks.
+
+## D-028 — Xác thực Storage cho Databricks qua Managed Identity
+
+**Date:** 2026-08-12
+**Decision:**
+*   Sử dụng Azure Access Connector / Managed Identity kết hợp với Azure RBAC để cấp quyền cho Azure Databricks truy cập ADLS Gen2 (`fastorderdatalake`). 
+*   **Quyền hạn MVP:** Cấp role `Storage Blob Data Contributor` cho Databricks Managed Identity ở scope cụ thể (container `landing`).
+
+**Reason:**
+*   Thực hành Security Best Practice theo khuyến nghị của Microsoft và kiến trúc Unity Catalog. Chấm dứt việc nhúng `client_secret` hay `account_key` vào mã nguồn Spark Conf, ngăn ngừa rủi ro rò rỉ credential và giảm chi phí vận hành xoay vòng khóa (key rotation).
+
+## D-029 — YOOCHOOSE Landing Preparation Strategy
+
+**Date:** 13/08/2026  
+**Context:** YOOCHOOSE clickstream is distributed as a compressed `yoochoose-data.7z` archive containing approximately 33 million click events. The file-based ingestion flow requires a cloud-native source boundary without relying on the developer's local filesystem.
+
+**Decision:** 
+Use the following preparation flow:
+External YOOCHOOSE Provider → Azure Data Factory → ADLS Landing / bootstrap → Azure Databricks → ADLS Landing / preparation → ADLS Landing / prepared
+
+Landing structure:
+landing/
+└── clickstream/
+    └── yoochoose/
+        ├── bootstrap/
+        │   └── yoochoose-data.7z
+        ├── preparation/
+        │   └── yoochoose-clicks.dat
+        └── prepared/
+            └── event_date=YYYY-MM-DD/
+                └── *.csv
+
+The prepared dataset uses:
+- CSV / comma-delimited text
+- no header
+- original four source fields (session_id, event_timestamp, item_id, category)
+- `event_date` is used only for physical organization and is not added to the file payload.
+
+Daily organization was selected after profiling the actual dataset:
+- 183 days
+- average: 180,349 events/day
+- minimum: 2,220 events/day
+- maximum: 393,950 events/day
+
+**Reason:** Landing should preserve upstream data as closely as practical. Converting the prepared files to Parquet would introduce an unnecessary representation change before the FastOrder ingestion pipeline accepts the source. Daily file organization provides a business-time-based source delivery layout while avoiding arbitrary row-count chunking such as the previous 250,000-rows-per-file experiment. Hourly organization was rejected because it would create unnecessary small source files for this dataset.
+
+**Consequences:** 
+- The previous 133-file local splitter remains an experiment only.
+- Laptop/local filesystem is not part of the official ingestion architecture.
+- `preparation/` is an intermediate cloud area.
+- `prepared/` becomes the source boundary for Airflow file-based ingestion.
+- Analytical/Silver partitioning will be decided independently from Landing layout.

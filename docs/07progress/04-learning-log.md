@@ -19,3 +19,30 @@ Trong Data Engineering, việc âm thầm bỏ qua lỗi (như file trạng thá
 
 **3. Idempotent Overwrite và Failure Windows**
 Việc chia quá trình ingest thành 5 bước I/O rõ ràng (Extract -> Pending -> Write Bronze -> Checkpoint -> Delete Pending) cô lập hoàn toàn các "Cửa sổ rủi ro" (Failure Windows). Khi kết hợp với tính năng Idempotent Overwrite (chấp nhận ghi đè an toàn), hệ thống trở nên vững chắc trước các tình huống tắt nguồn hay ngắt kết nối đột ngột.
+
+
+## 13/08/2026 - File-Based Cloud Preparation
+
+**1. Landing vs Bronze**
+Landing represents files accepted from or prepared on the source side before FastOrder ingestion. Bronze represents data that has already been accepted by the FastOrder ingestion pipeline. Therefore: Landing != Bronze.
+
+**2. Data Movement vs Processing vs Orchestration**
+ADF is for external/cloud data movement. Databricks/Spark is for large-scale data preparation. Airflow is for platform orchestration. Each tool has a different responsibility and should not automatically replace the others.
+
+**3. Cloud Identity**
+Databricks accesses ADLS through: Databricks → Unity Catalog → Storage Credential → Access Connector → Managed Identity → Azure RBAC → ADLS. Azure RBAC controls physical storage access, while Unity Catalog controls governed Databricks access.
+
+**4. Temporary Compute Storage**
+`/local_disk0` is temporary storage attached to Databricks compute. Using it for archive extraction does not make the developer laptop part of the data architecture. Persistent data must be written back to cloud storage.
+
+**5. Raw Data Preservation**
+Landing preparation should preserve upstream data as closely as practical. For YOOCHOOSE: original four fields are preserved, no header is introduced, no business cleaning is performed, no deduplication is performed, and no enrichment is performed. `event_date` is used only for physical routing.
+
+**6. Partition vs File**
+`event_date=2014-08-10/` is a logical filesystem partition. It does not inherently mean that exactly one physical file must exist inside the directory. Spark execution partitions and filesystem partitions are different concepts.
+
+**7. Data-Driven File Layout**
+The initial 250,000-row chunking strategy was arbitrary. The final source layout was chosen after profiling actual event-time distribution. Observed: 183 days, ~180k events/day average, ~394k events/day maximum. Daily organization was therefore chosen over hourly organization.
+
+**8. Spark Execution**
+Spark transformations such as `select()` and `repartition()` are lazy. Actual processing is triggered by actions such as `count()`, `display()`, or `write`. `repartition("event_date")` affects Spark execution layout, whereas `partitionBy("event_date")` affects output filesystem layout.

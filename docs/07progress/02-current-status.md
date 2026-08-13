@@ -83,8 +83,12 @@ Các hạng mục đã hoàn tất:
 18. Tích hợp ADLS Gen2 Client vào Bronze Writer (Thay thế Local Path) - COMPLETE
 19. Crash Recovery Testing với Storage Mây (Crash after ADLS, Crash after Checkpoint) - COMPLETE
 20. Airflow E2E Validation và Fix Timezone bug - COMPLETE
+21. Tạo ADLS `landing` container - COMPLETE
+22. Khởi tạo và cấu hình ADF Copy Activity từ HTTP vào ADLS - COMPLETE
+23. Publish ADF Pipelines & Artifacts - COMPLETE
 
-Mục tiêu tiếp theo (Next Phase):
-21. Thiết lập môi trường Apache Spark (Local/Containerized).
-22. Xây dựng Data Quality Checks cho quá trình di chuyển dữ liệu từ Bronze sang Silver.
-23. Thiết kế bảng Orders Silver với ACID propertie
+**Mục tiêu tiếp theo (Next Phase):**
+24. Cấu hình Azure Access Connector và Managed Identity cho Databricks.
+25. Phân quyền RBAC (Storage Blob Data Contributor) cho Databricks Identity trên container `landing`.
+26. Viết Databricks Notebook (sử dụng thư viện Python %pip) để giải nén file `.7z`.
+27. Sử dụng PySpark đọc dữ liệu giải nén và tạo Time-based layout (`event_date`) tại `landing/clickstream/yoochoose/prepared/`.
