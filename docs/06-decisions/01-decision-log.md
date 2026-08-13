@@ -367,3 +367,10 @@ Daily organization was selected after profiling the actual dataset:
 - `preparation/` is an intermediate cloud area.
 - `prepared/` becomes the source boundary for Airflow file-based ingestion.
 - Analytical/Silver partitioning will be decided independently from Landing layout.
+
+## D-030 — File Manifest Storage Strategy for MVP
+
+**Date:** 13/08/2026  
+**Decision:** File Manifest MVP uses shared atomic JSON state; dedicated PostgreSQL metadata store deferred to future scale.
+
+**Reason:** The current source operates at a scale of a few hundred physical files, and the Airflow File DAG will execute as a single active run. The `state/` directory is already a persistent shared volume, and the atomic JSON pattern from the Database Ingestion MVP can be directly reused. This fulfills the MVP requirement without introducing additional Azure or Database infrastructure complexities at this stage.
