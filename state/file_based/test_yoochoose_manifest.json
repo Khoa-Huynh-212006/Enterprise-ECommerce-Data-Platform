@@ -6,10 +6,10 @@
       "relative_path": "event_date=2014-08-10/part-00000.csv",
       "etag": "\"0x8D123456\"",
       "size": 15000000,
-      "last_modified": "2026-08-13T11:16:43.882217+00:00",
+      "last_modified": "2026-08-13T11:20:49.433810+00:00",
       "status": "PENDING",
       "ingestion_id": "test-ingestion-001",
-      "discovered_at": "2026-08-13T11:16:43.882223+00:00",
+      "discovered_at": "2026-08-13T11:20:49.433816+00:00",
       "processed_at": null
     }
   ]

@@ -7,7 +7,8 @@ from fastorder.ingestion.file_based.manifest_manager import (
     manifest_from_dict,
     validate_manifest,
     save_manifest,
-    load_manifest
+    load_manifest,
+    find_manifest_entry
 )
 from pathlib import Path
 
@@ -57,7 +58,6 @@ print("\nRestored manifest:")
 print(restored_manifest)
 
 assert restored_manifest == original_manifest
-
 print("\nManifest round-trip: PASS")
 
 validate_manifest(restored_manifest)
@@ -132,7 +132,6 @@ print(
 )
 
 assert TEST_MANIFEST_PATH.exists()
-
 print("Manifest file exists: PASS")
 
 temp_path = TEST_MANIFEST_PATH.with_suffix(
@@ -140,7 +139,6 @@ temp_path = TEST_MANIFEST_PATH.with_suffix(
 )
 
 assert not temp_path.exists()
-
 print("Temporary file cleanup: PASS")
 
 loaded_manifest = load_manifest(
@@ -148,5 +146,33 @@ loaded_manifest = load_manifest(
 )
 
 assert loaded_manifest == original_manifest
-
 print("Manifest load: PASS")
+
+found_entry = find_manifest_entry(
+    original_manifest,
+    relative_path=sample_entry.relative_path,
+    etag=sample_entry.etag,
+)
+
+assert found_entry == sample_entry
+print("Manifest lookup existing entry: PASS")
+
+
+different_version = find_manifest_entry(
+    original_manifest,
+    relative_path=sample_entry.relative_path,
+    etag='"DIFFERENT-ETAG"',
+)
+
+assert different_version is None
+print("Manifest lookup different version: PASS")
+
+
+missing_entry = find_manifest_entry(
+    original_manifest,
+    relative_path="event_date=2099-01-01/new-file.csv",
+    etag='"NEW-ETAG"',
+)
+
+assert missing_entry is None
+print("Manifest lookup missing entry: PASS")

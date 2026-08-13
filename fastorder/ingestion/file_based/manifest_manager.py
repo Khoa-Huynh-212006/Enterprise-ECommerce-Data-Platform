@@ -268,3 +268,54 @@ def find_manifest_entry(
             return entry
 
     return None
+
+
+def add_pending_entry(
+    manifest: FileManifest,
+    *,
+    relative_path: str,
+    etag: str,
+    size: int,
+    last_modified: datetime,
+    ingestion_id: str,
+    discovered_at: datetime,
+) -> FileManifest:
+    """
+    Add a new PENDING source file version to the manifest.
+
+    Raises ValueError if the same
+    (relative_path, etag) already exists.
+    """
+
+    existing_entry = find_manifest_entry(
+        manifest,
+        relative_path=relative_path,
+        etag=etag,
+    )
+
+    if existing_entry is not None:
+        raise ValueError(
+            "Manifest entry already exists for "
+            f"({relative_path}, {etag})"
+        )
+
+    pending_entry = ManifestEntry(
+        relative_path=relative_path,
+        etag=etag,
+        size=size,
+        last_modified=last_modified,
+        status="PENDING",
+        ingestion_id=ingestion_id,
+        discovered_at=discovered_at,
+        processed_at=None,
+    )
+
+    updated_manifest = FileManifest(
+        version=manifest.version,
+        source_name=manifest.source_name,
+        entries=manifest.entries + (pending_entry,),
+    )
+
+    validate_manifest(updated_manifest)
+
+    return updated_manifest
