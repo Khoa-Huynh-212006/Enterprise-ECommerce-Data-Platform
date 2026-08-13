@@ -319,3 +319,66 @@ def add_pending_entry(
     validate_manifest(updated_manifest)
 
     return updated_manifest
+
+
+def mark_processed(
+    manifest: FileManifest,
+    *,
+    relative_path: str,
+    etag: str,
+    processed_at: datetime,
+) -> FileManifest:
+    """
+    Mark an existing PENDING source file version as PROCESSED.
+    """
+
+    existing_entry = find_manifest_entry(
+        manifest,
+        relative_path=relative_path,
+        etag=etag,
+    )
+
+    if existing_entry is None:
+        raise ValueError(
+            "Cannot mark missing manifest entry as PROCESSED: "
+            f"({relative_path}, {etag})"
+        )
+
+    if existing_entry.status != "PENDING":
+        raise ValueError(
+            "Only PENDING entries can be marked as PROCESSED: "
+            f"{relative_path}"
+        )
+
+    processed_entry = ManifestEntry(
+        relative_path=existing_entry.relative_path,
+        etag=existing_entry.etag,
+        size=existing_entry.size,
+        last_modified=existing_entry.last_modified,
+
+        status="PROCESSED",
+        ingestion_id=existing_entry.ingestion_id,
+
+        discovered_at=existing_entry.discovered_at,
+        processed_at=processed_at,
+    )
+
+    updated_entries = tuple(
+        processed_entry
+        if (
+            entry.relative_path == relative_path
+            and entry.etag == etag
+        )
+        else entry
+        for entry in manifest.entries
+    )
+
+    updated_manifest = FileManifest(
+        version=manifest.version,
+        source_name=manifest.source_name,
+        entries=updated_entries,
+    )
+
+    validate_manifest(updated_manifest)
+
+    return updated_manifest

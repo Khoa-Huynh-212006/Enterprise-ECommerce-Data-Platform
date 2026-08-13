@@ -8,7 +8,9 @@ from fastorder.ingestion.file_based.manifest_manager import (
     validate_manifest,
     save_manifest,
     load_manifest,
-    find_manifest_entry
+    find_manifest_entry,
+    add_pending_entry,
+    create_initial_manifest
 )
 from pathlib import Path
 
@@ -176,3 +178,110 @@ missing_entry = find_manifest_entry(
 
 assert missing_entry is None
 print("Manifest lookup missing entry: PASS")
+
+
+pending_discovered_at = datetime.now(
+    timezone.utc
+)
+
+
+pending_test_manifest = create_initial_manifest()
+pending_manifest = add_pending_entry(
+    pending_test_manifest,
+    relative_path=(
+        "event_date=2014-08-11/"
+        "part-test.csv"
+    ),
+    etag='"pending-etag"',
+    size=123456,
+    last_modified=datetime.now(
+        timezone.utc
+    ),
+    ingestion_id="pending-ingestion-001",
+    discovered_at=pending_discovered_at,
+)
+
+assert len(pending_test_manifest.entries) == 0
+assert len(pending_manifest.entries) == 1
+
+pending_entry = pending_manifest.entries[0]
+
+assert pending_entry.status == "PENDING"
+assert pending_entry.processed_at is None
+assert (
+    pending_entry.ingestion_id
+    == "pending-ingestion-001"
+)
+
+print("Add PENDING entry: PASS")
+
+try:
+    add_pending_entry(
+        pending_manifest,
+        relative_path=pending_entry.relative_path,
+        etag=pending_entry.etag,
+        size=pending_entry.size,
+        last_modified=pending_entry.last_modified,
+        ingestion_id="another-ingestion-id",
+        discovered_at=datetime.now(
+            timezone.utc
+        ),
+    )
+
+except ValueError as exc:
+    print(
+        "Duplicate PENDING correctly rejected:",
+        exc,
+    )
+
+else:
+    raise AssertionError(
+        "Duplicate manifest identity was accepted"
+    )
+
+PENDING_TEST_PATH = Path(
+    "/opt/airflow/state/file_based/"
+    "pending_manifest_test.json"
+)
+
+# Cleanup để test có thể chạy lại nhiều lần
+if PENDING_TEST_PATH.exists():
+    PENDING_TEST_PATH.unlink()
+
+save_manifest(
+    pending_manifest,
+    PENDING_TEST_PATH,
+)
+
+print("PENDING manifest saved: PASS")
+
+
+reloaded_pending_manifest = load_manifest(
+    PENDING_TEST_PATH
+)
+
+assert len(reloaded_pending_manifest.entries) == 1
+
+reloaded_pending_entry = find_manifest_entry(
+    reloaded_pending_manifest,
+    relative_path=pending_entry.relative_path,
+    etag=pending_entry.etag,
+)
+
+assert reloaded_pending_entry is not None
+assert reloaded_pending_entry.status == "PENDING"
+assert (
+    reloaded_pending_entry.ingestion_id
+    == pending_entry.ingestion_id
+)
+assert reloaded_pending_entry.processed_at is None
+
+print("PENDING survives reload: PASS")
+
+assert (
+    reloaded_pending_entry.ingestion_id
+    == pending_entry.ingestion_id
+)
+
+if PENDING_TEST_PATH.exists():
+    PENDING_TEST_PATH.unlink()
