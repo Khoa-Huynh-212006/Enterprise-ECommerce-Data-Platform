@@ -7,6 +7,7 @@ from fastorder.ingestion.file_based.manifest_manager import (
     manifest_from_dict,
     validate_manifest,
     save_manifest,
+    load_manifest
 )
 from pathlib import Path
 
@@ -90,3 +91,11 @@ temp_path = TEST_MANIFEST_PATH.with_suffix(
 assert not temp_path.exists()
 
 print("Temporary file cleanup: PASS")
+
+loaded_manifest = load_manifest(
+    TEST_MANIFEST_PATH
+)
+
+assert loaded_manifest == original_manifest
+
+print("Manifest load: PASS")
