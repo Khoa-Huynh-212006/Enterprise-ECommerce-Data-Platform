@@ -220,3 +220,31 @@ def save_manifest(
         temp_path,
         manifest_path,
     )
+
+def load_manifest(
+    manifest_path: Path,
+) -> FileManifest:
+    """
+    Load and validate a manifest from JSON.
+
+    If the manifest does not exist, return an initial empty manifest.
+    """
+
+    if not manifest_path.exists():
+        return create_initial_manifest()
+
+    with manifest_path.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
+        manifest_dict = json.load(file)
+
+    manifest = manifest_from_dict(
+        manifest_dict
+    )
+
+    validate_manifest(
+        manifest
+    )
+
+    return manifest
