@@ -248,3 +248,23 @@ def load_manifest(
     )
 
     return manifest
+
+
+def find_manifest_entry(
+    manifest: FileManifest,
+    relative_path: str,
+    etag: str,
+) -> ManifestEntry | None:
+    """
+    Find a manifest entry by source file version identity:
+    (relative_path, etag).
+    """
+
+    for entry in manifest.entries:
+        if (
+            entry.relative_path == relative_path
+            and entry.etag == etag
+        ):
+            return entry
+
+    return None

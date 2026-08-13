@@ -69,6 +69,57 @@ TEST_MANIFEST_PATH = Path(
     "/opt/airflow/state/file_based/"
     "test_yoochoose_manifest.json"
 )
+MISSING_MANIFEST_PATH = Path(
+    "/opt/airflow/state/file_based/"
+    "missing_manifest_test.json"
+)
+if MISSING_MANIFEST_PATH.exists():
+    MISSING_MANIFEST_PATH.unlink()
+
+initial_manifest = load_manifest(
+    MISSING_MANIFEST_PATH
+)
+
+assert initial_manifest.version == 1
+assert initial_manifest.source_name == "yoochoose_clickstream"
+assert len(initial_manifest.entries) == 0
+
+print("Missing manifest -> initial state: PASS")
+
+CORRUPT_MANIFEST_PATH = Path(
+    "/opt/airflow/state/file_based/"
+    "corrupt_manifest_test.json"
+)
+
+CORRUPT_MANIFEST_PATH.parent.mkdir(
+    parents=True,
+    exist_ok=True,
+)
+
+with CORRUPT_MANIFEST_PATH.open(
+    "w",
+    encoding="utf-8",
+) as file:
+    file.write(
+        '{"version": 1, "source_name": '
+    )
+    try:
+        load_manifest(
+            CORRUPT_MANIFEST_PATH
+        )
+
+    except json.JSONDecodeError:
+        print(
+            "Corrupt manifest correctly rejected: PASS"
+        )
+
+    else:
+        raise AssertionError(
+            "Corrupt manifest was not rejected"
+        )
+
+if CORRUPT_MANIFEST_PATH.exists():
+    CORRUPT_MANIFEST_PATH.unlink()
 
 save_manifest(
     original_manifest,
