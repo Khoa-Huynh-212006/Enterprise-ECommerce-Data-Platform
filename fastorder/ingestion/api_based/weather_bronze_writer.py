@@ -55,6 +55,39 @@ def weather_metadata_to_dict(
     }
 
 
+def build_weather_ingestion_root(
+    *,
+    api_type: str,
+    warehouse_id: str,
+    ingestion_id: str,
+    logical_at: datetime,
+) -> str:
+
+    if not isinstance(logical_at, datetime):
+        raise ValueError(
+            "logical_at phải là datetime"
+        )
+
+    if logical_at.tzinfo is None:
+        raise ValueError(
+            "logical_at phải timezone-aware"
+        )
+
+    ingestion_date = (
+        logical_at
+        .astimezone(VN_TIMEZONE)
+        .date()
+        .isoformat()
+    )
+
+    return (
+        f"{BRONZE_ROOT}/"
+        f"{api_type}/"
+        f"ingestion_date={ingestion_date}/"
+        f"warehouse_id={warehouse_id}/"
+        f"ingestion_id={ingestion_id}"
+    )
+
 def write_weather_to_bronze(
     *,
     bronze_client: FileSystemClient,
@@ -90,29 +123,11 @@ def write_weather_to_bronze(
 
     logical_at = metadata.logical_at
 
-    if not isinstance(logical_at, datetime):
-        raise ValueError(
-            "logical_at phải là datetime"
-        )
-
-    if logical_at.tzinfo is None:
-        raise ValueError(
-            "logical_at phải timezone-aware"
-        )
-
-    ingestion_date = (
-        logical_at
-        .astimezone(VN_TIMEZONE)
-        .date()
-        .isoformat()
-    )
-
-    ingestion_root = (
-        f"{BRONZE_ROOT}/"
-        f"{metadata.api_type}/"
-        f"ingestion_date={ingestion_date}/"
-        f"warehouse_id={metadata.warehouse_id}/"
-        f"ingestion_id={metadata.ingestion_id}"
+    ingestion_root = build_weather_ingestion_root(
+        api_type=metadata.api_type,
+        warehouse_id=metadata.warehouse_id,
+        ingestion_id=metadata.ingestion_id,
+        logical_at=metadata.logical_at,
     )
 
     response_path = (
