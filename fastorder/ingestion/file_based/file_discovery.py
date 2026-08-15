@@ -13,11 +13,10 @@ def discover_files(
     file_system_client: FileSystemClient,
     root_path: str,
 ) -> list[DiscoveredFile]:
-    """
-    Discover valid source CSV files recursively under root_path.
-    """
+    
+    "Tìm tất cả các file CSV hợp lệ dưới thư mục root_path một cách đệ quy."
 
-    normalized_root = root_path.strip("/")
+    normalized_root = root_path.strip("/") #Xóa ký tự "/" ở đầu và ở cuối path
     root_prefix = normalized_root + "/"
 
     paths = file_system_client.get_paths(
@@ -36,7 +35,7 @@ def discover_files(
 
         if not path.name.startswith(root_prefix):
             raise ValueError(
-                f"Discovered path is outside root_path: {path.name}"
+                f"Đường dẫn được phát hiện nằm ngoài root_path: {path.name}"
             )
 
         relative_path = path.name[len(root_prefix):]
