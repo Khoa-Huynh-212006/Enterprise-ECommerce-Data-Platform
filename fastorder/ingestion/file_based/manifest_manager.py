@@ -20,8 +20,8 @@ ALLOWED_MANIFEST_STATUSES = {
 }
 
 
-@dataclass(frozen=True)
-class ManifestEntry:
+@dataclass(frozen=True) # giúp bạn không phải viết constructor thủ công
+class ManifestEntry: # Một ManifestEntry đại diện cho một version cụ thể của một file
     relative_path: str
     etag: str
     size: int
@@ -29,7 +29,6 @@ class ManifestEntry:
 
     status: ManifestStatus
     ingestion_id: str
-
     discovered_at: datetime
     processed_at: datetime | None
 
@@ -48,7 +47,7 @@ def create_initial_manifest() -> FileManifest:
         entries=(),
     )
 
-def manifest_entry_to_dict(entry: ManifestEntry) -> dict:
+def manifest_entry_to_dict(entry: ManifestEntry) -> dict: # Chuyển các Manifest entry thành dict Python
     return {
         "relative_path": entry.relative_path,
         "etag": entry.etag,
@@ -64,7 +63,7 @@ def manifest_entry_to_dict(entry: ManifestEntry) -> dict:
         ),
     }
 
-def manifest_to_dict(manifest: FileManifest) -> dict:
+def manifest_to_dict(manifest: FileManifest) -> dict: #Chuyển toàn bộ danh sách Manifest entry thành dict Python
     return {
         "version": manifest.version,
         "source_name": manifest.source_name,
@@ -74,7 +73,7 @@ def manifest_to_dict(manifest: FileManifest) -> dict:
         ],
     }
 
-def manifest_entry_from_dict(data: dict) -> ManifestEntry:
+def manifest_entry_from_dict(data: dict) -> ManifestEntry: 
     return ManifestEntry(
         relative_path=data["relative_path"],
         etag=data["etag"],
@@ -110,44 +109,43 @@ def manifest_from_dict(data: dict) -> FileManifest:
 def validate_manifest(manifest: FileManifest) -> None:
     if manifest.version != MANIFEST_VERSION:
         raise ValueError(
-            f"Unsupported manifest version: {manifest.version}"
+            f"Không hỗ trợ manifest version này: {manifest.version}"
         )
 
     if manifest.source_name != YOOCHOOSE_SOURCE_NAME:
         raise ValueError(
-            f"Unexpected source_name: {manifest.source_name}"
+            f"source_name không đúng: {manifest.source_name}"
         )
 
-    seen_identities: set[tuple[str, str]] = set()
+    seen_identities: set[tuple[str, str]] = set() # Kiểm tra duplicate
 
     for entry in manifest.entries:
-
         if not entry.relative_path.strip():
             raise ValueError(
-                "Manifest entry has empty relative_path"
+                "Manifest entry có relative_path rỗng"
             )
 
         if not entry.etag.strip():
             raise ValueError(
-                f"Manifest entry has empty etag: "
+                f"Manifest entry có etag rỗng: "
                 f"{entry.relative_path}"
             )
 
         if entry.size < 0:
             raise ValueError(
-                f"Manifest entry has negative size: "
+                f"Manifest entry có kích thước âm: "
                 f"{entry.relative_path}"
             )
 
         if entry.status not in ALLOWED_MANIFEST_STATUSES:
             raise ValueError(
-                f"Invalid manifest status "
+                f"Manifest entry có status không thuộc PENDING hoặc PROCESSED"
                 f"{entry.status!r}: {entry.relative_path}"
             )
 
         if not entry.ingestion_id.strip():
             raise ValueError(
-                f"Manifest entry has empty ingestion_id: "
+                f"Manifest entry có ingestion_id rỗng: "
                 f"{entry.relative_path}"
             )
 
@@ -168,7 +166,7 @@ def validate_manifest(manifest: FileManifest) -> None:
             and entry.processed_at is not None
         ):
             raise ValueError(
-                f"PENDING entry must not have processed_at: "
+                f"PENDING entry không được có processed_at: "
                 f"{entry.relative_path}"
             )
 
@@ -177,7 +175,7 @@ def validate_manifest(manifest: FileManifest) -> None:
             and entry.processed_at is None
         ):
             raise ValueError(
-                f"PROCESSED entry must have processed_at: "
+                f"PROCESSED entry phải có processed_at: "
                 f"{entry.relative_path}"
             )
 
@@ -225,9 +223,8 @@ def load_manifest(
     manifest_path: Path,
 ) -> FileManifest:
     """
-    Load and validate a manifest from JSON.
-
-    If the manifest does not exist, return an initial empty manifest.
+    Tải và xác thực một manifest từ JSON. 
+    Nếu manifest không tồn tại, trả về một manifest trống ban đầu.
     """
 
     if not manifest_path.exists():
@@ -239,13 +236,9 @@ def load_manifest(
     ) as file:
         manifest_dict = json.load(file)
 
-    manifest = manifest_from_dict(
-        manifest_dict
-    )
+    manifest = manifest_from_dict(manifest_dict)
 
-    validate_manifest(
-        manifest
-    )
+    validate_manifest(manifest)
 
     return manifest
 
@@ -256,8 +249,7 @@ def find_manifest_entry(
     etag: str,
 ) -> ManifestEntry | None:
     """
-    Find a manifest entry by source file version identity:
-    (relative_path, etag).
+    Tìm một manifest entry theo nhận dạng phiên bản tệp nguồn: (relative_path, etag).
     """
 
     for entry in manifest.entries:
@@ -281,10 +273,8 @@ def add_pending_entry(
     discovered_at: datetime,
 ) -> FileManifest:
     """
-    Add a new PENDING source file version to the manifest.
-
-    Raises ValueError if the same
-    (relative_path, etag) already exists.
+    Thêm một phiên bản tệp nguồn PENDING mới vào bản kê khai.
+    Ném ValueError nếu cùng (relative_path, etag) đã tồn tại.
     """
 
     existing_entry = find_manifest_entry(
@@ -295,7 +285,7 @@ def add_pending_entry(
 
     if existing_entry is not None:
         raise ValueError(
-            "Manifest entry already exists for "
+            "Manifest entry đã tồn tại "
             f"({relative_path}, {etag})"
         )
 
@@ -329,7 +319,7 @@ def mark_processed(
     processed_at: datetime,
 ) -> FileManifest:
     """
-    Mark an existing PENDING source file version as PROCESSED.
+    Đánh dấu phiên bản tệp nguồn PENDING thành PROCESSED.
     """
 
     existing_entry = find_manifest_entry(
@@ -340,13 +330,13 @@ def mark_processed(
 
     if existing_entry is None:
         raise ValueError(
-            "Cannot mark missing manifest entry as PROCESSED: "
+            "Không thể đánh dấu PROCESSED cho 1 entry không tồn tại: "
             f"({relative_path}, {etag})"
         )
 
     if existing_entry.status != "PENDING":
         raise ValueError(
-            "Only PENDING entries can be marked as PROCESSED: "
+            "Chỉ có trạng thái PENDING mới được chuyển sang PROCESSED "
             f"{relative_path}"
         )
 
