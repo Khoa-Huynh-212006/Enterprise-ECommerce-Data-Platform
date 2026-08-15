@@ -374,3 +374,15 @@ Daily organization was selected after profiling the actual dataset:
 **Decision:** File Manifest MVP uses shared atomic JSON state; dedicated PostgreSQL metadata store deferred to future scale.
 
 **Reason:** The current source operates at a scale of a few hundred physical files, and the Airflow File DAG will execute as a single active run. The `state/` directory is already a persistent shared volume, and the atomic JSON pattern from the Database Ingestion MVP can be directly reused. This fulfills the MVP requirement without introducing additional Azure or Database infrastructure complexities at this stage.
+
+## D-031 — File-Based Bronze Writer Architecture and Runner Observability
+
+**Date:** 15/08/2026  
+**Context:** Developing the file-based ingestion pipeline merging Discovery, Manifest Manager, and Bronze Writer.  
+**Decision:** 
+- Bronze Writer strictly preserves the original four source fields, adds technical metadata, converts to Parquet, and writes to a deterministic destination with replay-safe overwrite.
+- The File Ingestion Runner handles orchestration, not data manipulation.
+- Logical ingestion timestamp (`ingested_at`) is defined as the moment a file is first discovered (`discovered_at` in the manifest), not when the write operation finishes.
+- Observability metrics (`discovered`, `processed`, `skipped`, `retried`) are integrated directly into the runner.  
+
+**Reason:** Preserving the `discovered_at` timestamp ensures that retries maintain the exact same ingestion ID and logical time, guaranteeing deterministic output paths and idempotent overwrites in Bronze. Differentiating between `retried` (an attempt state) and `processed` (a success state) provides clear operational visibility for Airflow logs.

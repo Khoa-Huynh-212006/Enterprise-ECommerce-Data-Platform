@@ -46,3 +46,18 @@ The initial 250,000-row chunking strategy was arbitrary. The final source layout
 
 **8. Spark Execution**
 Spark transformations such as `select()` and `repartition()` are lazy. Actual processing is triggered by actions such as `count()`, `display()`, or `write`. `repartition("event_date")` affects Spark execution layout, whereas `partitionBy("event_date")` affects output filesystem layout.
+
+## 15/08/2026 - File Ingestion Orchestration
+
+**1. Runner Responsibilities**
+The Runner is an orchestrator. It does not parse CSV, serialize Parquet, or manipulate JSON directly. It coordinates the File Discovery, Manifest Manager, and Bronze Writer modules.
+
+**2. Logical Ingestion Timestamp**
+`discovered_at` is defined as the time logical ingestion begins. `processed_at` is the time ingestion completes. The runner passes `ingested_at=entry.discovered_at` to the Bronze Writer. This guarantees that retries reuse the same `ingestion_id` and timestamp, ensuring idempotent Bronze paths.
+
+**3. Observability Metrics**
+- `discovered`: Total valid source files found in Landing.
+- `skipped`: Files already marked as PROCESSED in the manifest.
+- `retried`: Files found in PENDING state (from a previous failure/crash) that are attempted again.
+- `processed`: Files successfully written to Bronze in the current run (includes successful retries).
+A single file can increment both `retried` and `processed` without contradiction.

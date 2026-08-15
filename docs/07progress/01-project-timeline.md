@@ -588,3 +588,26 @@ Landing Prepared
 
 - Design the file-based incremental ingestion mechanism: Landing Prepared → File Discovery → File Identity → Manifest → Airflow → 
 
+## Mốc 22 — File-Based Bronze Writer Prototype Complete
+
+### 15/08/2026
+
+**Mục tiêu**
+
+- Design and implement the File-based Bronze Writer and the skeleton for the Ingestion Runner.
+
+**Đã thực hiện**
+
+- Implemented File-based Bronze Writer Prototype.
+- Ensured source preservation, Parquet conversion, and injection of technical metadata.
+- Enforced deterministic destination paths and replay-safe overwrite semantics (`overwrite=True`).
+- Created the skeleton for `file_ingestion_runner.py`.
+- Defined the `FileIngestionResult` dataclass for observability (`discovered`, `processed`, `skipped`, `retried`).
+
+**Kết quả**
+
+- File-based Bronze Writer Prototype Complete — source preservation, Parquet conversion, technical metadata, deterministic destination và replay-safe overwrite đã được triển khai/test.
+
+**Bước tiếp theo**
+
+- Implement Manifest loading and File Discovery in the Runner.
