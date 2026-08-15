@@ -104,8 +104,13 @@ fake_result = WeatherApiResult(
 metadata = build_weather_ingestion_metadata(
     api_type="forecast",
     warehouse_id="WH_HCM",
+
+    run_id="test_weather_run_001",
     ingestion_id=TEST_INGESTION_ID,
+
+    logical_at=TEST_REQUESTED_AT,
     requested_at=TEST_REQUESTED_AT,
+
     api_result=fake_result,
 )
 
