@@ -3,10 +3,12 @@ from fastorder.ingestion.api_based.weather_api_client import (
 )
 
 
-payload = fetch_forecast(
+result = fetch_forecast(
     latitude=10.82,
     longitude=106.63,
 )
+
+payload = result.payload
 
 print(
     "Latitude:",
@@ -77,3 +79,20 @@ print(
     "Generation time ms:",
     payload.get("generationtime_ms"),
 )
+
+print(
+    "HTTP status:",
+    result.status_code,
+)
+
+print(
+    "Endpoint:",
+    result.endpoint,
+)
+
+print(
+    "Request params:",
+    result.request_params,
+)
+
+assert result.status_code == 200

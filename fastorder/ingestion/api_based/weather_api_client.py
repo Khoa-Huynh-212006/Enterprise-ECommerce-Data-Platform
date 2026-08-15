@@ -1,4 +1,6 @@
 import requests
+from dataclasses import dataclass
+from typing import Any
 FORECAST_URL = (
     "https://api.open-meteo.com/v1/forecast"
 )
@@ -11,12 +13,18 @@ HOURLY_VARIABLES = [
     "weather_code",
 ]
 
+@dataclass(frozen=True)
+class WeatherApiResult:
+    payload: dict
+    status_code: int
+    endpoint: str
+    request_params: dict[str, Any]
 
 def fetch_forecast(
     *,
     latitude: float,
     longitude: float,
-) -> dict:
+) -> WeatherApiResult:
     """
     Lấy dữ liệu 48 giờ từ weather forecast
     nguồn: Open-Meteo
@@ -52,6 +60,13 @@ def fetch_forecast(
             "Open-Meteo field 'hourly' không phải object"
         )
 
+
+    if "hourly" not in payload:
+        raise ValueError(
+            "Open-Meteo response thiếu field 'hourly'"
+        )
+
+
     if "time" not in hourly:
         raise ValueError(
             "Open-Meteo hourly response thiếu 'time'"
@@ -82,9 +97,10 @@ def fetch_forecast(
             "Open-Meteo response thiếu 'hourly_units'"
         )
 
-    if "hourly" not in payload:
-        raise ValueError(
-            "Open-Meteo response thiếu field 'hourly'"
-        )
 
-    return payload
+    return WeatherApiResult(
+        payload=payload,
+        status_code=response.status_code,
+        endpoint=FORECAST_URL,
+        request_params=params
+    )
