@@ -611,3 +611,30 @@ Landing Prepared
 **Bước tiếp theo**
 
 - Implement Manifest loading and File Discovery in the Runner.
+
+## Mốc 23 — File-Based Incremental Ingestion Core Prototype Complete
+
+### 15/08/2026
+
+**Mục tiêu**
+
+- Validate the end-to-end local integration of File Discovery, Manifest Manager, Bronze Writer, and Runner.
+
+**Đã thực hiện**
+
+- Completed full integration testing of the File Ingestion Runner.
+- Verified happy path (NEW → PROCESSED).
+- Verified incremental skipping (PROCESSED → SKIP).
+- Verified retry mechanism (PENDING → RETRY).
+- Validated crash recovery after PENDING state save.
+- Validated crash recovery after Bronze write failure.
+- Ensured replay-safe overwrite on ADLS.
+- Cleaned up local integration tests.
+
+**Kết quả**
+
+- File-based Incremental Ingestion Core Prototype Complete — Discovery + Manifest + Bronze Writer + Runner đã vượt qua happy path, incremental skip và crash/retry recovery tests.
+
+**Bước tiếp theo**
+
+- Bắt đầu Airflow orchestration: Tạo DAG gọi `run_file_ingestion()` với manifest thật tại `state/file_based/yoochoose_manifest.json`.

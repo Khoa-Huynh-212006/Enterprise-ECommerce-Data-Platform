@@ -61,3 +61,11 @@ The Runner is an orchestrator. It does not parse CSV, serialize Parquet, or mani
 - `retried`: Files found in PENDING state (from a previous failure/crash) that are attempted again.
 - `processed`: Files successfully written to Bronze in the current run (includes successful retries).
 A single file can increment both `retried` and `processed` without contradiction.
+
+## 15/08/2026 - Incremental File Ingestion Integration
+
+**1. State Transition Safety**
+The integration of Discovery, Manifest, and Bronze Writer solidifies the idempotent nature of the pipeline. The state transitions (NEW → PROCESSED, PROCESSED → SKIP, PENDING → RETRY) ensure that data is never duplicated, even if the process is executed multiple times over the same Landing files.
+
+**2. Crash Recovery Semantics**
+By saving the PENDING state before any heavy I/O operations (like downloading or uploading to ADLS), the pipeline establishes a critical recovery point. A crash after PENDING or after a partial Bronze write simply results in a RETRY on the next run, which safely overwrites the deterministic Bronze path and eventually marks the file as PROCESSED.

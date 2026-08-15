@@ -5,6 +5,7 @@ from fastorder.ingestion.file_based.file_discovery import (
 )
 from io import BytesIO
 import pandas as pd
+from zoneinfo import ZoneInfo
 
 SOURCE_NAME = "yoochoose_clickstream"
 INGESTION_METHOD = "file_incremental"
@@ -116,7 +117,12 @@ def write_file_to_bronze(
             f"ingestion_id không hợp lệ: {ingestion_id}"
         )
 
-    ingestion_date = (ingested_at.date().isoformat())
+    ingestion_date = (
+        ingested_at
+        .astimezone(ZoneInfo("Asia/Ho_Chi_Minh"))
+        .date()
+        .isoformat()
+    )
 
     bronze_path = (
         f"{BRONZE_ROOT}/"

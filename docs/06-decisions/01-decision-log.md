@@ -386,3 +386,23 @@ Daily organization was selected after profiling the actual dataset:
 - Observability metrics (`discovered`, `processed`, `skipped`, `retried`) are integrated directly into the runner.  
 
 **Reason:** Preserving the `discovered_at` timestamp ensures that retries maintain the exact same ingestion ID and logical time, guaranteeing deterministic output paths and idempotent overwrites in Bronze. Differentiating between `retried` (an attempt state) and `processed` (a success state) provides clear operational visibility for Airflow logs.
+
+
+## D-032 — Airflow Orchestration for File-Based Ingestion
+
+**Date:** 15/08/2026  
+**Context:** The core components for file-based ingestion (Discovery, Manifest Manager, Bronze Writer, and Runner) have been fully implemented and have passed integration testing for both happy paths and failure scenarios.
+
+**Decision:** 
+Proceed to Airflow orchestration by creating a DAG that directly calls `run_file_ingestion()` using the real state manifest at `state/file_based/yoochoose_manifest.json`.
+
+**Reason:** The core prototype successfully validated all critical resilience requirements:
+- NEW → PROCESSED
+- PROCESSED → SKIP
+- PENDING → RETRY
+- Crash recovery (after PENDING and after Bronze write)
+- Replay-safe overwrite semantics
+
+**Consequences:** 
+- The local integration testing phase is complete and cleaned up.
+- The next step focuses entirely on Airflow DAG development and containerized execution.
