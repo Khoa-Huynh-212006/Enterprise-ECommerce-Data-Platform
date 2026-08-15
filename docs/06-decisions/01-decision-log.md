@@ -406,3 +406,33 @@ Proceed to Airflow orchestration by creating a DAG that directly calls `run_file
 **Consequences:** 
 - The local integration testing phase is complete and cleaned up.
 - The next step focuses entirely on Airflow DAG development and containerized execution.
+
+## D-033 — Weather API Sourcing Strategy (Forecast vs. Historical)
+
+**Date:** 16/08/2026  
+**Context:** FastOrder requires weather data to support logistics operations (predicting delivery delays) and analytics (correlating past delays with weather conditions). Open-Meteo provides Forecast, Historical Forecast, and Historical Weather (ERA5) APIs.
+
+**Decision:** 
+- **Forecast API:** Chosen as the primary source for ongoing, incremental operational ingestion (periodic fetching for the 5 warehouses).
+- **Historical Forecast API:** Chosen for the initial bootstrap/backfill (e.g., past 30–90 days) to populate the database for immediate analytical value.
+- **Historical Weather ERA5:** Excluded from the MVP scope.
+
+**Reason:** FastOrder needs near-real-time logistics forecasting and recent operational analysis, not multi-decade climate trend research. The Historical Forecast API shares the same parameters and response structure as the Forecast API, allowing for a clean, unified codebase (`fetch_current_forecast` vs. `fetch_historical_forecast`) without building two separate ingestion systems. This perfectly mirrors the project's database architecture (initial bootstrap followed by incremental delta loads).
+
+**Consequences:** 
+- The Weather API Client will be designed to support both current and historical forecast endpoints using a shared data contract.
+- The platform gains immediate analytical utility from the backfilled weather data, avoiding the "cold start" problem of waiting months for forecast data to accumulate.
+
+## D-034 — Weather API Bronze Storage Strategy (Sidecar Pattern)
+
+**Date:** 16/08/2026  
+**Context:** Storing Open-Meteo API responses in the Bronze layer requires a mechanism that preserves the raw provider data while tracking FastOrder's internal ingestion lineage.
+
+**Decision:** 
+API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`). FastOrder technical metadata (e.g., `ingestion_id`, `warehouse_id`, `requested_at`) is stored in a separate companion file (`metadata.json`) alongside the payload, rather than modifying or flattening the provider's original JSON structure.
+
+**Reason:** Injecting internal metadata directly into the API payload alters the raw semantics and structure of the source data. The Sidecar pattern (`response.json` + `metadata.json`) guarantees 100% preservation of the provider's original keys, nested arrays, and units, while maintaining clean and isolated technical lineage for downstream Silver layer processing.
+
+**Consequences:** 
+- Each API ingestion unit corresponds to a specific directory structure: `bronze/weather/open_meteo/forecast/ingestion_date=.../warehouse_id=.../ingestion_id=.../`.
+- The Weather API Client will return pure Python dictionaries (parsed JSON) instead of Pandas DataFrames.
