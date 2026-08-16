@@ -1,9 +1,11 @@
 import json
 
-from datetime import datetime
+from datetime import datetime, date
 from zoneinfo import ZoneInfo
 
-from azure.storage.filedatalake import FileSystemClient
+from azure.storage.filedatalake import (
+    FileSystemClient,
+)
 
 from fastorder.ingestion.api_based.weather_api_client import (
     WeatherApiResult,
@@ -88,11 +90,55 @@ def build_weather_ingestion_root(
         f"ingestion_id={ingestion_id}"
     )
 
-def write_weather_to_bronze(
+
+def build_historical_weather_ingestion_root(
+    *,
+    warehouse_id: str,
+    ingestion_id: str,
+    start_date: date,
+    end_date: date,
+) -> str:
+
+    if not warehouse_id:
+        raise ValueError(
+            "warehouse_id không được rỗng"
+        )
+
+    if not ingestion_id:
+        raise ValueError(
+            "ingestion_id không được rỗng"
+        )
+
+    if not isinstance(start_date, date):
+        raise ValueError(
+            "start_date phải là date"
+        )
+
+    if not isinstance(end_date, date):
+        raise ValueError(
+            "end_date phải là date"
+        )
+
+    if start_date > end_date:
+        raise ValueError(
+            "start_date không được lớn hơn end_date"
+        )
+
+    return (
+        f"{BRONZE_ROOT}/historical_forecast/"
+        f"window_start={start_date.isoformat()}/"
+        f"window_end={end_date.isoformat()}/"
+        f"warehouse_id={warehouse_id}/"
+        f"ingestion_id={ingestion_id}"
+    )
+
+
+def _write_weather_files(
     *,
     bronze_client: FileSystemClient,
     api_result: WeatherApiResult,
     metadata: WeatherIngestionMetadata,
+    ingestion_root: str,
 ) -> tuple[str, str]:
 
     if not metadata.ingestion_id:
@@ -121,15 +167,6 @@ def write_weather_to_bronze(
             "warehouse_id không được chứa path separator"
         )
 
-    logical_at = metadata.logical_at
-
-    ingestion_root = build_weather_ingestion_root(
-        api_type=metadata.api_type,
-        warehouse_id=metadata.warehouse_id,
-        ingestion_id=metadata.ingestion_id,
-        logical_at=metadata.logical_at,
-    )
-
     response_path = (
         f"{ingestion_root}/response.json"
     )
@@ -144,36 +181,75 @@ def write_weather_to_bronze(
         separators=(",", ":"),
     ).encode("utf-8")
 
-    metadata_dict = weather_metadata_to_dict(
-        metadata
-    )
-
     metadata_bytes = json.dumps(
-        metadata_dict,
+        weather_metadata_to_dict(metadata),
         ensure_ascii=False,
         indent=2,
     ).encode("utf-8")
 
-    response_file_client = (
-        bronze_client.get_file_client(
-            response_path
-        )
-    )
-
-    metadata_file_client = (
-        bronze_client.get_file_client(
-            metadata_path
-        )
-    )
-
-    response_file_client.upload_data(
+    bronze_client.get_file_client(
+        response_path
+    ).upload_data(
         response_bytes,
         overwrite=True,
     )
 
-    metadata_file_client.upload_data(
+    bronze_client.get_file_client(
+        metadata_path
+    ).upload_data(
         metadata_bytes,
         overwrite=True,
     )
 
-    return response_path, metadata_path
+    return (
+        response_path,
+        metadata_path,
+    )
+
+
+def write_weather_to_bronze(
+    *,
+    bronze_client: FileSystemClient,
+    api_result: WeatherApiResult,
+    metadata: WeatherIngestionMetadata,
+) -> tuple[str, str]:
+
+    ingestion_root = build_weather_ingestion_root(
+        api_type=metadata.api_type,
+        warehouse_id=metadata.warehouse_id,
+        ingestion_id=metadata.ingestion_id,
+        logical_at=metadata.logical_at,
+    )
+
+    return _write_weather_files(
+        bronze_client=bronze_client,
+        api_result=api_result,
+        metadata=metadata,
+        ingestion_root=ingestion_root,
+    )
+
+
+def write_historical_weather_to_bronze(
+    *,
+    bronze_client: FileSystemClient,
+    api_result: WeatherApiResult,
+    metadata: WeatherIngestionMetadata,
+    start_date: date,
+    end_date: date,
+) -> tuple[str, str]:
+
+    ingestion_root = (
+        build_historical_weather_ingestion_root(
+            warehouse_id=metadata.warehouse_id,
+            ingestion_id=metadata.ingestion_id,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    )
+
+    return _write_weather_files(
+        bronze_client=bronze_client,
+        api_result=api_result,
+        metadata=metadata,
+        ingestion_root=ingestion_root,
+    )
