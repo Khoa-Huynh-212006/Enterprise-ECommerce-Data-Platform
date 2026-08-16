@@ -436,3 +436,19 @@ API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`
 **Consequences:** 
 - Each API ingestion unit corresponds to a specific directory structure: `bronze/weather/open_meteo/forecast/ingestion_date=.../warehouse_id=.../ingestion_id=.../`.
 - The Weather API Client will return pure Python dictionaries (parsed JSON) instead of Pandas DataFrames.
+
+## D-035 — Tính lũy đẳng (Idempotency) của API Ingestion và Chiến lược Retry 2 tầng
+
+**Date:** 16/08/2026  
+**Context:** Luồng API Weather Forecast cần khả năng chịu lỗi (fault tolerance) và tính lũy đẳng (idempotency) để xử lý sự cố mạng ngắn hạn (như rate limit của Open-Meteo) mà không làm nhân bản dữ liệu trên Data Lake hay phải phụ thuộc vào một global state manifest cồng kềnh.
+
+**Decision:** 
+- **Định danh tất định (Deterministic Identity - UUID5):** `ingestion_id` được tạo bằng UUID5 dựa trên khóa logic (`api_type|warehouse_id|run_id`) để đảm bảo các lần chạy logic giống nhau luôn ghi vào đúng một đường dẫn Bronze.
+- **Giao thức Commit:** File đánh dấu `_SUCCESS` chỉ được ghi duy nhất vào bước cuối cùng của một API ingestion unit.
+- **Chiến lược Retry 2 tầng:** Áp dụng HTTP-level retry (với backoff) cho các lỗi mạng chập chờn, và phụ thuộc vào Airflow task retry cho các lỗi hệ thống kéo dài.
+
+**Reason:** UUID4 sẽ tạo ID mới mỗi khi retry, gây rác dữ liệu. UUID5 trói buộc đường dẫn đích với một Airflow run cụ thể, cho phép ghi đè an toàn (overwrite). Marker `_SUCCESS` loại bỏ sự phụ thuộc vào một JSON state file tập trung, giúp kiểm tra idempotency cục bộ mà không bị khóa (lock-free). Nhờ vậy, nếu một run bị crash giữa chừng, lần retry của Airflow sẽ dễ dàng BỎ QUA (SKIP) các unit đã commit và chỉ chạy tiếp những phần còn thiếu.
+
+**Consequences:** 
+- Tích hợp end-to-end thành công với khả năng phục hồi cục bộ (ví dụ: phục hồi sau crash bằng cách skip 4 kho hàng đã commit và ingest chính xác 1 kho còn lại).
+

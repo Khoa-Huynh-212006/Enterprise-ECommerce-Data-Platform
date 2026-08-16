@@ -638,3 +638,28 @@ Landing Prepared
 **Bước tiếp theo**
 
 - Bắt đầu Airflow orchestration: Tạo DAG gọi `run_file_ingestion()` với manifest thật tại `state/file_based/yoochoose_manifest.json`.
+
+## Mốc 24 — Hoàn tất luồng Weather Forecast API Ingestion
+
+### 16/08/2026
+
+**Mục tiêu**
+
+- Thiết lập một luồng incremental ingestion chịu lỗi và lũy đẳng cho external Weather Forecast API (Open-Meteo).
+
+**Đã thực hiện**
+
+- Tích hợp thành công Open-Meteo Forecast API thực tế cho toàn bộ 5 kho hàng FastOrder.
+- Bảo toàn nguyên vẹn raw JSON response song song với technical metadata của FastOrder (`metadata.json`).
+- Triển khai cơ chế tạo UUID5 tất định để cố định đường dẫn Bronze đích.
+- Xây dựng giao thức commit cục bộ với file `_SUCCESS` để quản lý trạng thái.
+- Cấu hình kiến trúc retry 2 tầng: HTTP backoff/retry và Airflow task-level recovery.
+- Xác thực thành công khả năng tự phục hồi cục bộ trong một đợt crash thực tế do rate-limit (Airflow retry đã tự động bỏ qua 4 kho đã commit và chạy tiếp 1 kho cuối).
+
+**Kết quả**
+
+- Weather Forecast API Flow: COMPLETE. Hệ thống đã chứng minh được độ tin cậy E2E.
+
+**Bước tiếp theo**
+
+- Triển khai Historical Forecast bootstrap/backfill để khởi tạo dữ liệu phân tích ban đầu.
