@@ -452,3 +452,16 @@ API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`
 **Consequences:** 
 - Tích hợp end-to-end thành công với khả năng phục hồi cục bộ (ví dụ: phục hồi sau crash bằng cách skip 4 kho hàng đã commit và ingest chính xác 1 kho còn lại).
 
+## D-036 — Historical Forecast Backfill Strategy
+
+**Date:** 16/08/2026  
+
+**Decision:** 
+Historical Forecast bootstrap = 90 days, split into 30-day deterministic windows.
+Forecast ongoing = 48h future window, incremental periodic.
+
+**Why:**
+- Isolate failure (lỗi ở khoảng thời gian nào chỉ cần chạy lại khoảng đó).
+- Retry individual windows một cách độc lập và an toàn.
+- Avoid overlapping rolling 90-day backfills (ngăn chặn việc backfill trôi dạt theo ngày chạy thực tế).
+- Deterministic replay (đảm bảo tính tất định khi Airflow chạy lại các khoảng thời gian trong quá khứ).

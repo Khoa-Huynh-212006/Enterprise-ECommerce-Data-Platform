@@ -72,23 +72,31 @@ FastOrder đã đi qua giai đoạn thiết kế và khởi tạo nguồn OLTP. 
 - Chưa có Bronze/Silver/Gold implementation[cite: 3].
 
 ## Current phase gate
-Giai đoạn Local Airflow Incremental Ingestion MVP đã chính thức đóng lại với kết quả PASS toàn bộ các bài test E2E. Hệ thống đã sẵn sàng để thay thế Local Storage bằng Cloud Storage.
 
-Các hạng mục đã hoàn tất:
-13. Xây dựng Bronze Parquet Writer (Idempotent atomic write) - COMPLETE
-14. Thiết kế Incremental Runner (Multi-batch, Pending Context, Crash Recovery) - COMPLETE
-15. Local End-to-End Operational Validation - COMPLETE
-16. Chuyển đổi và cấu hình Airflow DAG cho Incremental Runner - COMPLETE
-17. Khởi tạo `adls_client.py` và thực hiện Connection Probe (Authentication & Base I/O) - COMPLETE
-18. Tích hợp ADLS Gen2 Client vào Bronze Writer (Thay thế Local Path) - COMPLETE
-19. Crash Recovery Testing với Storage Mây (Crash after ADLS, Crash after Checkpoint) - COMPLETE
-20. Airflow E2E Validation và Fix Timezone bug - COMPLETE
-21. Tạo ADLS `landing` container - COMPLETE
-22. Khởi tạo và cấu hình ADF Copy Activity từ HTTP vào ADLS - COMPLETE
-23. Publish ADF Pipelines & Artifacts - COMPLETE
+### Flow 1 — Operational Database
+PostgreSQL → Timestamp Incremental Ingestion → Airflow → ADLS Bronze
+**Status:** COMPLETE
 
-**Mục tiêu tiếp theo (Next Phase):**
-24. Cấu hình Azure Access Connector và Managed Identity cho Databricks.
-25. Phân quyền RBAC (Storage Blob Data Contributor) cho Databricks Identity trên container `landing`.
-26. Viết Databricks Notebook (sử dụng thư viện Python %pip) để giải nén file `.7z`.
-27. Sử dụng PySpark đọc dữ liệu giải nén và tạo Time-based layout (`event_date`) tại `landing/clickstream/yoochoose/prepared/`.
+### Flow 2 — File-Based Source
+External YOOCHOOSE → ADF → ADLS Landing → Databricks → File Discovery → Manifest → Runner → Bronze Writer
+**Status:** CODE COMPLETE 
+*(Cần thiết lập Airflow DAG và chạy validation chính thức)*
+
+### Flow 3 — External API Source (Weather)
+Open-Meteo Forecast & Historical → HTTP Client → UUID5 Identity → Bronze Sidecar Pattern
+**Status:** COMPLETE
+
+**Validated:**
+- E2E Weather Forecast (Incremental 48h).
+- E2E Historical Forecast (Bootstrap 90 days, 30-day windows).
+- Raw JSON + Metadata sidecar preservation.
+- Deterministic UUID5 paths.
+- `_SUCCESS` commit marker protocol.
+- 2-Layer Retry (HTTP backoff + Airflow retry).
+
+### Not Started
+
+- Bronze → Silver
+- Synapse
+- dbt Gold
+- Power BI

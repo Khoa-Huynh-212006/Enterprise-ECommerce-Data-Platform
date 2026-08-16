@@ -663,3 +663,22 @@ Landing Prepared
 **Bước tiếp theo**
 
 - Triển khai Historical Forecast bootstrap/backfill để khởi tạo dữ liệu phân tích ban đầu.
+
+## Mốc 25 — Hoàn tất E2E luồng Weather API Ingestion (Forecast & Historical)
+
+### 16/08/2026
+
+**Mục tiêu**
+
+- Hoàn thiện toàn bộ kiến trúc API Ingestion bao gồm luồng dự báo tương lai (Forecast) và nạp dữ liệu lịch sử (Historical Forecast).
+
+**Đã thực hiện**
+
+- Hoàn thành End-to-End (E2E) luồng Weather Forecast.
+- Hoàn thành End-to-End luồng Historical Forecast backfill.
+- Áp dụng cơ chế chia nhỏ cửa sổ (30 days/window) cho tập dữ liệu 90 ngày.
+- Xác thực toàn bộ các kịch bản chịu lỗi, phục hồi cục bộ và tính tất định (deterministic ID).
+
+**Kết quả**
+
+- External API Source (Weather) Flow: HOÀN TOÀN COMPLETE.

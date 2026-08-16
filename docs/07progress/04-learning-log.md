@@ -69,3 +69,23 @@ The integration of Discovery, Manifest, and Bronze Writer solidifies the idempot
 
 **2. Crash Recovery Semantics**
 By saving the PENDING state before any heavy I/O operations (like downloading or uploading to ADLS), the pipeline establishes a critical recovery point. A crash after PENDING or after a partial Bronze write simply results in a RETRY on the next run, which safely overwrites the deterministic Bronze path and eventually marks the file as PROCESSED.
+
+## 16/08/2026 - Weather API Ingestion Concepts
+
+**1. Technical Contract Validation**
+Metadata builder hoạt động như một bức tường lửa bảo vệ contract. Việc validate chặt chẽ từ gốc (ví dụ: timezone-aware timestamps, missing coordinates) giúp hệ thống Fail-Fast trước khi tiến hành các tác vụ I/O đắt đỏ.
+
+**2. Forecast vs Historical Forecast**
+Sử dụng Forecast cho vận hành logistics tương lai (Incremental). Sử dụng Historical Forecast cho backfill dữ liệu phân tích (Bootstrap). Không sử dụng Historical Weather (ERA5) để tránh over-engineering vì FastOrder không phân tích khí hậu nhiều thập kỷ.
+
+**3. logical_at vs requested_at**
+`logical_at` cố định theo thời gian schedule của Airflow, dùng để tạo UUID5 và Partition, đảm bảo tính tất định (Deterministic) khi retry. `requested_at` là thời gian gọi HTTP thực tế, chỉ dùng để audit.
+
+**4. UUID5 & Commit Marker (`_SUCCESS`)**
+UUID5 băm các thuộc tính logic (api_type, warehouse_id, run_id) để tạo ra ID không đổi qua các lần retry. File `_SUCCESS` đóng vai trò là cờ báo hiệu hoàn tất, giúp hệ thống biết chính xác điểm cần phục hồi (Retry-safe destination) mà không cần global JSON manifest.
+
+**5. HTTP Retry vs Airflow Retry**
+HTTP backoff hấp thụ các lỗi mạng chớp nhoáng (như Rate limit). Airflow retry gánh vác các lỗi hệ thống hoặc downtime kéo dài.
+
+**6. Backfill Window**
+Chia nhỏ dữ liệu lịch sử (ví dụ: 90 ngày thành các khoảng 30 ngày) giúp khoanh vùng rủi ro lỗi và tối ưu memory/API payload.

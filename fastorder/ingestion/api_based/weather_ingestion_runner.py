@@ -28,6 +28,10 @@ from fastorder.ingestion.api_based.weather_ingestion_state import (
     write_success_marker,
 )
 
+from fastorder.ingestion.api_based.historical_window import (
+    build_historical_windows,
+)
+
 from fastorder.ingestion.api_based.weather_config import (
     WAREHOUSE_WEATHER_LOCATIONS,
 )
@@ -363,4 +367,78 @@ def run_historical_forecast_ingestion(
         response_path=response_path,
         metadata_path=metadata_path,
         success_path=success_path,
+    )
+
+def run_all_historical_forecast_ingestions(
+    *,
+    bronze_client: FileSystemClient,
+    end_date: date,
+    run_id: str,
+    logical_at: datetime,
+    total_days: int = 90,
+    window_days: int = 30,
+) -> WeatherBatchIngestionResult:
+
+    windows = build_historical_windows(
+        end_date=end_date,
+        total_days=total_days,
+        window_days=window_days,
+    )
+
+    results = []
+
+    committed = 0
+    skipped = 0
+
+    for window in windows:
+
+        print(
+            "\nHISTORICAL WINDOW: "
+            f"{window.start_date} "
+            f"-> {window.end_date}"
+        )
+
+        for warehouse in WAREHOUSE_WEATHER_LOCATIONS:
+
+            print(
+                "START: Historical weather: "
+                f"{warehouse.warehouse_id} "
+                f"{window.start_date} "
+                f"-> {window.end_date}"
+            )
+
+            result = run_historical_forecast_ingestion(
+                bronze_client=bronze_client,
+
+                warehouse_id=warehouse.warehouse_id,
+                latitude=warehouse.latitude,
+                longitude=warehouse.longitude,
+
+                start_date=window.start_date,
+                end_date=window.end_date,
+
+                run_id=run_id,
+                logical_at=logical_at,
+            )
+
+            results.append(result)
+
+            if result.status == "committed":
+                committed += 1
+
+            elif result.status == "skipped":
+                skipped += 1
+
+            else:
+                raise RuntimeError(
+                    "Historical weather ingestion "
+                    "trả status không hợp lệ: "
+                    f"{result.status}"
+                )
+
+    return WeatherBatchIngestionResult(
+        total=len(results),
+        committed=committed,
+        skipped=skipped,
+        results=tuple(results),
     )
