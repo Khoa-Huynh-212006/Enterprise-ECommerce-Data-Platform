@@ -1,6 +1,9 @@
 import requests
 from dataclasses import dataclass
 from typing import Any
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
+
 FORECAST_URL = (
     "https://api.open-meteo.com/v1/forecast"
 )
@@ -20,6 +23,29 @@ class WeatherApiResult:
     endpoint: str
     request_params: dict[str, Any]
 
+def build_http_session() -> requests.Session:
+
+    retry_policy = Retry(
+        total=3,
+        connect=3,
+        read=3,
+        status=3,
+        backoff_factor=1.0,
+        status_forcelist=(429, 500, 502, 503, 504),
+        allowed_methods=frozenset({"GET",}),
+        respect_retry_after_header=True,
+        raise_on_status=False,
+    )
+
+    adapter = HTTPAdapter(max_retries=retry_policy)
+    session = requests.Session()
+    session.mount("https://", adapter,)
+
+    return session
+
+HTTP_SESSION = build_http_session()
+
+
 def fetch_forecast(
     *,
     latitude: float,
@@ -38,7 +64,7 @@ def fetch_forecast(
         "forecast_hours": 48,
     }
 
-    response = requests.get(
+    response = HTTP_SESSION.get(
         FORECAST_URL,
         params=params,
         timeout=30,
@@ -53,19 +79,22 @@ def fetch_forecast(
             "Open-Meteo response không phải JSON object"
         )
 
+    if "hourly" not in payload:
+        raise ValueError(
+            "Open-Meteo response thiếu field 'hourly'"
+        )
+    
+    if "hourly_units" not in payload:
+        raise ValueError(
+            "Open-Meteo response thiếu 'hourly_units'"
+        )
+
     hourly = payload["hourly"]
 
     if not isinstance(hourly, dict):
         raise ValueError(
             "Open-Meteo field 'hourly' không phải object"
         )
-
-
-    if "hourly" not in payload:
-        raise ValueError(
-            "Open-Meteo response thiếu field 'hourly'"
-        )
-
 
     if "time" not in hourly:
         raise ValueError(
@@ -92,10 +121,6 @@ def fetch_forecast(
                 f"actual={actual_length}"
             )
 
-    if "hourly_units" not in payload:
-        raise ValueError(
-            "Open-Meteo response thiếu 'hourly_units'"
-        )
 
 
     return WeatherApiResult(

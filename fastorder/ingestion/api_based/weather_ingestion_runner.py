@@ -1,5 +1,6 @@
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import time
 
 from azure.storage.filedatalake import (
     FileSystemClient,
@@ -221,7 +222,7 @@ def run_all_forecast_ingestions(
                 "Weather ingestion trả status "
                 f"không hợp lệ: {result.status}"
             )
-
+        
     return WeatherBatchIngestionResult(
         total=len(results),
         committed=committed,
