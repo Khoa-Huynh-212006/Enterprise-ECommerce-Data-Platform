@@ -1,1 +1,230 @@
+from dataclasses import dataclass
+from datetime import datetime, timezone
 
+from azure.storage.filedatalake import (
+    FileSystemClient,
+)
+
+from fastorder.ingestion.api_based.weather_api_client import (
+    fetch_forecast,
+)
+
+from fastorder.ingestion.api_based.weather_ingestion_metadata import (
+    build_weather_ingestion_metadata,
+)
+
+from fastorder.ingestion.api_based.weather_bronze_writer import (
+    build_weather_ingestion_root,
+    write_weather_to_bronze,
+)
+
+from fastorder.ingestion.api_based.weather_ingestion_state import (
+    build_weather_ingestion_id,
+    success_marker_exists,
+    write_success_marker,
+)
+
+from fastorder.ingestion.api_based.weather_config import (WAREHOUSE_WEATHER_LOCATIONS)
+
+
+@dataclass(frozen=True)
+class WeatherIngestionResult:
+    status: str
+
+    warehouse_id: str
+    ingestion_id: str
+    ingestion_root: str
+
+    response_path: str | None
+    metadata_path: str | None
+    success_path: str | None
+
+@dataclass(frozen=True)
+class WeatherBatchIngestionResult:
+    total: int
+    committed: int
+    skipped: int
+    results: tuple[WeatherIngestionResult, ...]
+
+def run_forecast_ingestion(
+    *,
+    bronze_client: FileSystemClient,
+    warehouse_id: str,
+    latitude: float,
+    longitude: float,
+    run_id: str,
+    logical_at: datetime,
+) -> WeatherIngestionResult:
+
+    if not warehouse_id:
+        raise ValueError(
+            "warehouse_id không được để trống"
+        )
+
+    if not run_id:
+        raise ValueError(
+            "run_id không được để trống"
+        )
+
+    if not isinstance(logical_at, datetime):
+        raise ValueError(
+            "logical_at phải là datetime"
+        )
+
+    if logical_at.tzinfo is None:
+        raise ValueError(
+            "logical_at phải timezone-aware"
+        )
+
+    api_type = "forecast"
+
+
+    ingestion_id = build_weather_ingestion_id(
+        api_type=api_type,
+        warehouse_id=warehouse_id,
+        run_id=run_id,
+    )
+
+
+
+    ingestion_root = build_weather_ingestion_root(
+        api_type=api_type,
+        warehouse_id=warehouse_id,
+        ingestion_id=ingestion_id,
+        logical_at=logical_at,
+    )
+
+
+    if success_marker_exists(
+        bronze_client=bronze_client,
+        ingestion_root=ingestion_root,
+    ):
+
+        print(
+            f"SKIP: Weather snapshot đã commit: "
+            f"{warehouse_id}"
+        )
+
+        return WeatherIngestionResult(
+            status="skipped",
+
+            warehouse_id=warehouse_id,
+            ingestion_id=ingestion_id,
+            ingestion_root=ingestion_root,
+
+            response_path=None,
+            metadata_path=None,
+
+            success_path=(
+                f"{ingestion_root}/_SUCCESS"
+            ),
+        )
+
+
+
+    requested_at = datetime.now(
+        timezone.utc
+    )
+
+    api_result = fetch_forecast(
+        latitude=latitude,
+        longitude=longitude,
+    )
+
+
+    metadata = build_weather_ingestion_metadata(
+        api_type=api_type,
+
+        warehouse_id=warehouse_id,
+        run_id=run_id,
+        ingestion_id=ingestion_id,
+
+        logical_at=logical_at,
+        requested_at=requested_at,
+
+        api_result=api_result,
+    )
+    response_path, metadata_path = (
+        write_weather_to_bronze(
+            bronze_client=bronze_client,
+            api_result=api_result,
+            metadata=metadata,
+        )
+    )
+
+
+    success_path = write_success_marker(
+        bronze_client=bronze_client,
+        ingestion_root=ingestion_root,
+    )
+
+
+    print(
+        f"COMMITTED: Weather forecast: "
+        f"{warehouse_id}"
+    )
+
+
+
+    return WeatherIngestionResult(
+        status="committed",
+
+        warehouse_id=warehouse_id,
+        ingestion_id=ingestion_id,
+        ingestion_root=ingestion_root,
+
+        response_path=response_path,
+        metadata_path=metadata_path,
+        success_path=success_path,
+    )
+
+def run_all_forecast_ingestions(
+    *,
+    bronze_client: FileSystemClient,
+    run_id: str,
+    logical_at: datetime,
+) -> WeatherBatchIngestionResult:
+
+    results = []
+
+    committed = 0
+    skipped = 0
+
+    for warehouse in WAREHOUSE_WEATHER_LOCATIONS:
+
+        print(
+            f"\nSTART: Weather forecast: "
+            f"{warehouse.warehouse_id}"
+        )
+
+        result = run_forecast_ingestion(
+            bronze_client=bronze_client,
+
+            warehouse_id=warehouse.warehouse_id,
+            latitude=warehouse.latitude,
+            longitude=warehouse.longitude,
+
+            run_id=run_id,
+            logical_at=logical_at,
+        )
+
+        results.append(result)
+
+        if result.status == "committed":
+            committed += 1
+
+        elif result.status == "skipped":
+            skipped += 1
+
+        else:
+            raise RuntimeError(
+                "Weather ingestion trả status "
+                f"không hợp lệ: {result.status}"
+            )
+
+    return WeatherBatchIngestionResult(
+        total=len(results),
+        committed=committed,
+        skipped=skipped,
+        results=tuple(results),
+    )
