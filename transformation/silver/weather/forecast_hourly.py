@@ -1,5 +1,8 @@
 from pyspark.sql import DataFrame, SparkSession
 from delta.tables import DeltaTable
+from pyspark.sql.types import TimestampType
+from pyspark.sql import functions as F
+from utils import path_exists
 
 
 # Load df_metadata và df_response từ Ingestion_Path
@@ -160,6 +163,62 @@ def attach_forecast_metadata(
     )
 
     return df
+
+# Lấy columns cần thiết và đổi tên phù hợp
+def standardize_forecast_columns(
+    df: DataFrame,
+) -> DataFrame:
+
+    df = df.select(
+        "warehouse_id",
+        "ingestion_id",
+        "_source_file_path",
+
+        F.col("logical_at").alias("snapshot_at"),
+        F.col("requested_at").alias("retrieved_at"),
+        F.col("time").alias("forecast_time_local"),
+
+        "temperature_2m",
+        "relative_humidity_2m",
+        "precipitation",
+        "wind_speed_10m",
+        "weather_code",
+
+        "requested_latitude",
+        "requested_longitude",
+        "response_latitude",
+        "response_longitude",
+    )
+
+    return df
+
+def normalize_forecast_timestamps(
+    df: DataFrame,
+) -> DataFrame:
+
+    df = (
+        df
+        .withColumn(
+            "retrieved_at",
+            F.col("retrieved_at").cast(TimestampType())
+        )
+        .withColumn(
+            "snapshot_at",
+            F.col("snapshot_at").cast(TimestampType())
+        )
+        .withColumn(
+            "forecast_time",
+            F.to_utc_timestamp(
+                F.col("forecast_time_local").cast(TimestampType()),
+                "Asia/Ho_Chi_Minh"
+            )
+        )
+        .drop("forecast_time_local")
+    )
+
+    return df
+
+
 
 
 
