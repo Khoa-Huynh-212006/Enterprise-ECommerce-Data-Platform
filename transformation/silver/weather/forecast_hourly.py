@@ -4,18 +4,6 @@ from pyspark.sql.types import TimestampType
 from pyspark.sql import functions as F
 from utils import path_exists
 
-
-# Load df_metadata và df_response từ Ingestion_Path
-def load_forecast_bronze(
-    spark: SparkSession, 
-    ingestion_path: str
-)-> tuple[DataFrame, DataFrame]:
-    if not path_exists(f"{ingestion_path}/_SUCCESS"):
-        raise ValueError(f"Bronze ingestion path này chưa commit: {ingestion_path}")
-    
-    df_metadata = spark.read.format("json").option("multiline", True).load(f"{ingestion_path}/metadata.json")
-    df_response = spark.read.format("json").option("multiline", True).load(f"{ingestion_path}/response.json")
-    return df_response, df_metadata
     
 # Lấy ra danh sách các Paths đã commit (_SUCCESS)
 def discover_committed_forecast_ingestions(
@@ -219,6 +207,25 @@ def normalize_forecast_timestamps(
     return df
 
 
+def transform_forecast_hourly(
+    df_response: DataFrame,
+    df_metadata: DataFrame,
+) -> DataFrame:
+
+    df = extract_forecast_ingestion_context(df_response)
+
+    df = flatten_hourly_arrays(df)
+
+    df = attach_forecast_metadata(
+        df,
+        df_metadata,
+    )
+
+    df = standardize_forecast_columns(df)
+
+    df = normalize_forecast_timestamps(df)
+
+    return df
 
 
 
