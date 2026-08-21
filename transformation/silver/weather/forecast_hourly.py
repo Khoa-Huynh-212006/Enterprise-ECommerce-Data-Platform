@@ -43,7 +43,7 @@ def get_processed_forecast_ingestion_ids(
     spark: SparkSession,
     silver_path: str,
 ) -> set[str]:
-    if not DeltaTable.isDeltaTable(spark, silver_path):
+    if not DeltaTable.isDeltaTable(spark, silver_path): # check xem có phải delta dataset
         return set()
     
     df_silver = spark.read.format("delta").load(silver_path)
@@ -62,6 +62,19 @@ def get_processed_forecast_ingestion_ids(
     }
 
 
+
+def find_pending_forecast_ingestions(
+    committed_ingestion_paths: list[str],
+    processed_ingestion_ids: set[str],
+) -> list[str]:
+    final_ingestion_paths = []
+
+    for ingestion_path in committed_ingestion_paths:
+        ingestion_id = ingestion_path.rstrip("/").split("/")[-1].removeprefix("ingestion_id=")
+        if ingestion_id not in processed_ingestion_ids:
+            final_ingestion_paths.append(ingestion_path)
+
+    return final_ingestion_paths
 
 
 
