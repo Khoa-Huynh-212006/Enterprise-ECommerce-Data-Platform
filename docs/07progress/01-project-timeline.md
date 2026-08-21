@@ -682,3 +682,26 @@ Landing Prepared
 **Kết quả**
 
 - External API Source (Weather) Flow: HOÀN TOÀN COMPLETE.
+
+## Mốc 26 — Khởi động Phát triển Tầng Silver 
+
+### 20/08/2026
+
+**Mục tiêu**
+
+- Xây dựng tầng Silver cho dữ liệu Weather Forecast, chuẩn bị dữ liệu chất lượng cao cho lớp phân tích.
+
+**Đã thực hiện**
+
+- Bắt đầu phát triển luồng Bronze → Silver với tập dữ liệu Weather Forecast.
+- Định nghĩa độ chi tiết (grain) và schema cho tập dữ liệu Silver `weather_forecast_hourly`.
+- Chạy prototype việc làm phẳng (flattening) mảng hourly của Open-Meteo bằng PySpark.
+- Join dữ liệu phản hồi Forecast với ingestion metadata.
+- Chuẩn hóa các timestamp của Forecast sang múi giờ UTC.
+- Hoàn thành các bước profiling Data Quality ban đầu trên sample ingestion.
+- Tái cấu trúc thiết kế Silver: chuyển từ việc viết logic trên notebook sang các module Python transformation có thể tái sử dụng.
+- Bắt đầu thiết kế cơ chế Silver ingestion incremental dựa trên phép trừ giữa Bronze ingestion ID đã commit và Silver ingestion ID đã lưu.
+
+**Kết quả**
+
+- Quá trình chuyển đổi dữ liệu lên Silver đã có bộ khung vững chắc và khả năng trích xuất metadata chính xác.

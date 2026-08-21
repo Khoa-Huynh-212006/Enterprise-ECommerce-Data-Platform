@@ -89,3 +89,17 @@ HTTP backoff hấp thụ các lỗi mạng chớp nhoáng (như Rate limit). Air
 
 **6. Backfill Window**
 Chia nhỏ dữ liệu lịch sử (ví dụ: 90 ngày thành các khoảng 30 ngày) giúp khoanh vùng rủi ro lỗi và tối ưu memory/API payload.
+
+## 20/08/2026 - Tầng Silver — Xử lý Incremental và Persistence
+
+**1. DataFrame không phải là Persistent State**
+Một Spark DataFrame chỉ tồn tại trong phạm vi của Spark session. Việc khởi động lại cluster hoặc notebook sẽ xóa sổ DataFrame đó. Do vậy, tuyệt đối không sử dụng DataFrame như một bộ nhớ để theo dõi các đơn vị Bronze ingestion nào đã được xử lý.
+
+**2. Persistent Silver State**
+Dữ liệu Weather sau khi xử lý xong sẽ được lưu trữ vật lý (persisted) tại tầng Silver trên ADLS. Bằng cách giữ lại trường `ingestion_id` trong tập dữ liệu Silver, các lần chạy pipeline trong tương lai có thể dễ dàng xác định được dữ liệu Bronze đang chờ (pending) theo công thức trừ tập hợp: `(Các ingestion ID Bronze đã commit) - (Các ingestion ID đã có ở Silver)`.
+
+**3. Ý nghĩa của Bronze Commit (Commit Semantics)**
+Một bản ghi Weather ingestion ở Bronze chỉ đủ điều kiện nạp lên Silver khi marker `_SUCCESS` tồn tại. Marker `_SUCCESS` đại diện cho việc toàn bộ đơn vị ingestion đã được commit hoàn chỉnh bao gồm cả 3 thành phần: `response.json`, `metadata.json`, và `_SUCCESS`.
+
+**4. Khác biệt giữa Notebook và Python Module**
+Databricks notebooks được sử dụng tối ưu nhất cho việc: giải thích (explanation), điều phối (orchestration), khám phá (exploration) và kiểm tra kết quả (inspecting results). Các logic transformation production tái sử dụng bắt buộc phải được chuyển vào các module Python. Cách tiếp cận này ngăn việc tầng Silver bị "phình to" thành một notebook duy nhất, đồng thời nâng cao khả năng bảo trì và testability.

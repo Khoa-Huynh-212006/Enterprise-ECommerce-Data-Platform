@@ -465,3 +465,30 @@ Forecast ongoing = 48h future window, incremental periodic.
 - Retry individual windows một cách độc lập và an toàn.
 - Avoid overlapping rolling 90-day backfills (ngăn chặn việc backfill trôi dạt theo ngày chạy thực tế).
 - Deterministic replay (đảm bảo tính tất định khi Airflow chạy lại các khoảng thời gian trong quá khứ).
+
+## D-037 — Thiết kế xử lý Silver Weather Forecast
+
+**Date:** 20/08/2026  
+
+**Context:** Quá trình chuyển đổi dữ liệu Weather Forecast từ Bronze lên Silver cần một kiến trúc linh hoạt, dễ bảo trì và có khả năng xử lý tăng tiến (incremental).
+
+**Decision:** 
+Dữ liệu Bronze Weather Forecast sẽ được transform thành tập dữ liệu Silver theo giờ (hourly) sử dụng kiến trúc pipeline Spark transformation module hóa.
+- Grain (độ chi tiết) của tập dữ liệu Silver là: **1 dòng = 1 kho hàng × 1 snapshot ingestion dự báo × 1 giờ dự báo**.
+- Các đơn vị ingestion (ingestion units) ở lớp Bronze chỉ được coi là hợp lệ để đưa vào xử lý Silver khi thư mục chứa chúng có marker commit `_SUCCESS`.
+- Quá trình xử lý Silver sẽ diễn ra theo cơ chế incremental. Các đơn vị ingestion chờ xử lý (Pending) được xác định bằng công thức: `Các ingestion ID Bronze đã commit - Các ingestion ID đã được lưu ở tầng Silver`.
+- Tập dữ liệu Silver giữ lại trường `ingestion_id` phục vụ cho data lineage và để nhận diện các đơn vị Bronze đã được xử lý trước đó.
+
+**Transformation Structure:** 
+Logic transformation cốt lõi được tách khỏi Databricks notebook và chuyển vào các module Python.
+- Cấu trúc hiện tại: `fastorder/transformation/silver/weather/forecast_hourly.py`
+- Notebook chỉ chịu trách nhiệm cho: tài liệu hóa (documentation), điều phối (orchestration), kiểm tra (inspection), và xác thực phát triển (development validation).
+- Module Python chứa toàn bộ transformation logic có thể tái sử dụng.
+
+**Reason:** 
+Thiết kế này ngăn chặn việc xây dựng một notebook khổng lồ ôm đồm toàn bộ logic production. Nó cũng mang lại các lợi ích:
+- Dễ dàng tái sử dụng các phép transform.
+- Dễ dàng viết unit test.
+- Phân tách trách nhiệm rõ ràng (Separation of Concerns).
+- Hỗ trợ tốt xử lý incremental.
+- Tạo ra các Silver pipelines an toàn khi chạy lại (retry-safe).
