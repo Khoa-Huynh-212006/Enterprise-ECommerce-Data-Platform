@@ -437,3 +437,16 @@ def profile_forecast_validation(
         "invalid_row_count_ingestions":
             invalid_row_count_ingestions,
     }
+
+
+def write_forecast_silver(
+    df: DataFrame,
+    silver_path: str,
+) -> None:
+
+    (
+        df.write
+        .format("delta")
+        .mode("append")
+        .save(silver_path)
+    )
