@@ -729,3 +729,55 @@ Landing Prepared
 
 **Bước tiếp theo:** 
 - Validation cho Silver transformation.
+
+## Mốc 27 — Hoàn thành luồng Weather Forecast Bronze → Silver
+
+### Tháng 8/2026
+
+Hoàn thành pipeline Silver đầu tiên của dự án FastOrder sử dụng dữ liệu Open-Meteo Weather Forecast.
+
+**Thiết kế Silver:**
+- Định nghĩa tập dữ liệu `weather_forecast_hourly`.
+- Định nghĩa độ chi tiết (grain): `kho hàng × snapshot dự báo × giờ dự báo`.
+- Định nghĩa khóa ứng viên (candidate key): `warehouse_id + ingestion_id + forecast_time`.
+- Chuẩn hóa các timestamp tầng Silver sang múi giờ UTC.
+
+**Xử lý Tăng tiến (Incremental Processing):**
+- Khám phá các ingestion Bronze đã commit thông qua file `_SUCCESS`.
+- Tra cứu các ingestion ID đã được lưu tại Silver.
+- Phát hiện các ingestion pending.
+- Tải hàng loạt (bulk load) các file `response.json` và `metadata.json` đang pending.
+- Xử lý thành công trạng thái `NO_OP` khi không có dữ liệu pending.
+
+**Transformation:**
+- Trích xuất `ingestion_id` từ các đường dẫn gốc tại Bronze.
+- Làm phẳng (flatten) các mảng hourly của Open-Meteo bằng PySpark.
+- Đính kèm ingestion metadata.
+- Chuẩn hóa ngữ nghĩa các cột tầng Silver.
+- Chuyển đổi giờ địa phương của Forecast từ `Asia/Ho_Chi_Minh` sang UTC.
+- Tái cấu trúc logic transformation thành các hàm Python tái sử dụng.
+
+**Chất lượng dữ liệu (Data Quality):**
+- Triển khai kiểm tra NULL.
+- Triển khai xác thực khoảng giá trị độ ẩm.
+- Triển khai xác thực lượng mưa và tốc độ gió.
+- Triển khai phát hiện trùng lặp độ chi tiết.
+- Triển khai cơ chế assertion Data Quality theo kiểu fail-fast.
+
+**Validation:**
+- Xác thực 48 dòng mong đợi cho mỗi Forecast ingestion.
+- Xác thực độ bao phủ của các pending ingestion.
+- Xác thực tổng số dòng dự kiến so với thực tế.
+- Xác thực sự vắng mặt của các ingestion ID không mong đợi (unexpected IDs).
+
+**Ghi dữ liệu Silver (Silver Write):**
+- Lưu trữ dữ liệu Forecast đã validate xuống ADLS Silver bằng Delta Lake.
+- Kiểm chứng lại (read-back) các ingestion ID sau khi ghi.
+- Chạy lại pipeline thành công với zero đơn vị pending (chạy rỗng).
+- Xác nhận hành vi incremental replay trả về `NO_OP` thành công.
+
+**Kiến trúc Notebook:**
+- Giữ lại `weather_hourly` làm notebook học tập và phát triển.
+- Tạo mới `weather_forecast_silver_pipeline` làm runner cho pipeline End-to-End.
+
+**Trạng thái Mốc: HOÀN TOÀN COMPLETE**

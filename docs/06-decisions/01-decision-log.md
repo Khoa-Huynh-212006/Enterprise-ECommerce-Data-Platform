@@ -535,3 +535,65 @@ Pipeline hiện tại kiểm tra:
 - Trùng lặp khóa độ chi tiết Silver (duplicate Silver grain keys)
 
 Các bài kiểm tra Data Quality không tự động làm sạch hay sửa đổi các bản ghi không hợp lệ. Nếu bất kỳ chỉ số Data Quality trọng yếu nào lớn hơn 0, pipeline sẽ thất bại trước khi ghi xuống Silver.
+
+## D-039 — Thiết kế Xử lý Silver Weather Forecast
+
+**Date:** 22/08/2026
+
+**Bối cảnh:**
+Dữ liệu Open-Meteo Forecast được lưu trữ ở Bronze dưới dạng các đơn vị ingestion đã được commit bao gồm: `response.json`, `metadata.json`, và `_SUCCESS`. Tầng Silver cần một tập dữ liệu theo giờ có cấu trúc rõ ràng, phù hợp cho việc phân tích hạ nguồn và kết hợp (join) với các tập dữ liệu FastOrder khác.
+
+**Quyết định:**
+Tập dữ liệu Silver mục tiêu là: `weather_forecast_hourly`.
+- **Độ chi tiết (Grain):** 1 dòng = 1 kho hàng × 1 snapshot ingestion dự báo × 1 giờ dự báo.
+- **Khóa ứng viên (Candidate key):** `warehouse_id + ingestion_id + forecast_time`.
+- Chỉ các đơn vị ingestion Bronze chứa file `_SUCCESS` mới đủ điều kiện xử lý lên Silver.
+
+**Xử lý tăng tiến (Incremental Processing):**
+Quá trình xử lý Silver diễn ra theo cơ chế incremental. Các đơn vị ingestion chờ xử lý (pending) được xác định bằng:
+`Các ingestion ID Bronze đã commit - Các ingestion ID đã được lưu ở tầng Silver`
+Tập dữ liệu Silver giữ lại trường `ingestion_id` phục vụ cho data lineage và đảm bảo an toàn khi chạy lại incremental (replay-safe). Nếu không có đơn vị ingestion nào pending, pipeline trả về trạng thái thành công `NO_OP` thay vì báo lỗi.
+
+**Thiết kế Transformation:**
+Logic PySpark transformation có thể tái sử dụng được triển khai tại:
+`fastorder/transformation/silver/weather/forecast_hourly.py`
+Luồng chuyển đổi:
+Bronze response → trích xuất ngữ cảnh ingestion → làm phẳng (flatten) mảng hourly → đính kèm metadata → chuẩn hóa các cột Silver → chuẩn hóa timestamp sang UTC → Silver Candidate.
+Các dòng dữ liệu Forecast được join với metadata bằng `LEFT JOIN` để đảm bảo những metadata bị thiếu vẫn hiển thị cho các chốt chặn Data Quality, thay vì âm thầm loại bỏ các bản ghi Forecast.
+
+**Chuẩn hóa thời gian (Time Standardization):**
+Các timestamp của Silver được chuẩn hóa sang UTC:
+- `logical_at` → `snapshot_at`
+- `requested_at` → `retrieved_at`
+- Open-Meteo local `hourly.time` → UTC `forecast_time`
+Thời gian dự báo của Open-Meteo được diễn dịch theo múi giờ `Asia/Ho_Chi_Minh` trước khi chuyển sang UTC.
+
+**Chính sách Data Quality:**
+Data Quality hoạt động theo nguyên tắc fail-fast.
+Pipeline hiện tại xác thực:
+- Các trường định danh bắt buộc.
+- Các timestamp bắt buộc.
+- Các chỉ số thời tiết bị NULL.
+- Độ ẩm tương đối nằm trong khoảng 0–100.
+- Lượng mưa không âm.
+- Tốc độ gió không âm.
+- Tính duy nhất của độ chi tiết Silver (Silver grain).
+Dữ liệu không hợp lệ sẽ không bị tự động điền (filled), cắt xén (clipped), loại bỏ (dropped) hay khử trùng lặp (deduplicated). Nếu Data Quality thất bại, batch đó sẽ không được lưu vào Silver. Các quy tắc làm sạch sẽ chỉ được đưa vào khi một vấn đề dữ liệu cụ thể có một chính sách sửa chữa rõ ràng và hợp lý.
+
+**Xác thực Transformation (Transformation Validation):**
+Sau khi Data Quality PASS, pipeline sẽ xác thực tính toàn vẹn của transformation.
+Contract của Forecast hiện tại: `1 ingestion = 48 forecast-hour rows`.
+Các bước xác thực:
+- Mọi ingestion pending đều xuất hiện trong Silver Candidate.
+- Mọi ingestion đều tạo ra chính xác 48 dòng.
+- Tổng số dòng thực tế khớp với tổng số dòng dự kiến.
+- Không có ingestion ID lạ (unexpected) nào xuất hiện.
+
+**Lưu trữ Silver (Silver Storage):**
+Dữ liệu đã validate được lưu vào ADLS Silver bằng Delta Lake tại: `silver/weather/forecast_hourly/`. Delta được sử dụng để cung cấp lưu trữ giao dịch (transactional) ở cấp độ bảng (table-level) dựa trên định dạng Parquet, hỗ trợ các quá trình xử lý incremental và MERGE trong tương lai.
+
+**Tách biệt Notebook (Notebook Separation):**
+Hai Databricks notebooks mang hai trách nhiệm riêng biệt:
+- `weather_hourly`: Dành cho phát triển, học tập, kiểm tra transformation, kiểm tra Data Quality và kiểm tra validation.
+- `weather_forecast_silver_pipeline`: Dành cho thực thi End-to-End, phát hiện pending data, xử lý NO_OP và ghi dữ liệu Silver.
+Sự phân tách này ngăn việc notebook phát triển trở thành entry point cho production pipeline.

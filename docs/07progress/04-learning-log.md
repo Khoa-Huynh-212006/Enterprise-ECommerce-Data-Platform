@@ -125,3 +125,43 @@ Việc profiling Data Quality giúp đo lường các vi phạm mà không tự 
 
 **6. Spark Driver**
 Các phép Spark transformation thực thi phân tán trên các executors, trong khi các control logic của Python chạy trên Driver. Các thao tác như `collect()` sẽ tải kết quả từ các executor về lại bộ nhớ của Driver và chỉ nên được sử dụng khi tập dữ liệu kết quả được xác định chắc chắn là nhỏ.
+
+
+## Ghi chú học tập - Weather Forecast Silver
+
+**1. Silver Candidate**
+Silver Candidate không phải là một lớp lưu trữ riêng biệt. Nó chỉ là một Spark DataFrame tạm thời, đã mang cấu trúc chuẩn của Silver schema nhưng chưa được lưu trữ (persisted) vật lý.
+Luồng dữ liệu: Bronze → Transformation → Silver Candidate → Data Quality → Validation → Silver. Chỉ dữ liệu đã được validate hoàn toàn mới trở thành dữ liệu Silver lưu trữ vĩnh viễn.
+
+**2. Spark DataFrame vs Persistent Storage**
+Spark DataFrames có tính chất tạm thời. Khởi động lại Spark session hoặc cluster sẽ xóa toàn bộ biến Python và trạng thái của DataFrame. Trạng thái cần lưu trữ bền vững phải được ghi ra bên ngoài, ví dụ: dữ liệu Bronze trên ADLS, bảng Silver Delta trên ADLS. Do đó, logic incremental không được phép phụ thuộc vào việc DataFrame có tồn tại giữa các lần chạy hay không.
+
+**3. Spark Driver và `collect()`**
+Spark thực thi tính toán phân tán thông qua các executors. Driver có vai trò điều phối quá trình thực thi và chạy các control logic Python. Hàm `collect()` có nhiệm vụ tải toàn bộ kết quả tính toán phân tán của Spark về bộ nhớ của Driver. Nó chỉ an toàn khi kết quả trả về chắc chắn là một tập dữ liệu nhỏ. Trong Forecast Silver pipeline, `collect()` chỉ được dùng cho các tập dữ liệu nhỏ như danh sách `distinct(ingestion_id)`.
+
+**4. Azure SDK Paths vs Spark Paths**
+Các hàm discovery của thư viện ADLS SDK sẽ trả về đường dẫn tương đối tính từ container, ví dụ: `weather/open_meteo/forecast/...`. Ngược lại, Spark yêu cầu một URI lưu trữ đầy đủ (fully qualified storage URI): `abfss://bronze@<storage-account>.dfs.core.windows.net/...`. Hệ quả: Azure SDK paths dùng để khám phá thư mục; ABFSS paths dùng cho quá trình Spark đọc dữ liệu.
+
+**5. Tải hàng loạt (Bulk Loading)**
+Đường dẫn filesystem có thể được khám phá thông qua vòng lặp Python. Nhưng bản thân dữ liệu cần được truyền vào Spark dưới dạng một danh sách các đường dẫn để đọc hàng loạt (bulk load) cùng một lúc, thay vì đọc từng đơn vị ingestion rồi union (nối) chúng lại.
+
+**6. Delta Lake**
+Delta Lake không phải là một database server. Về mặt khái niệm: `Delta = File dữ liệu Parquet + Transaction log`. Thành phần `_delta_log` giúp theo dõi các phiên bản bảng (table versions) và các thay đổi đã được commit. Delta được chọn cho tầng Silver vì lớp này cần một định dạng bảng có tính lưu trữ bền vững (persistent), giao dịch (transactional), và hỗ trợ các truy vấn tăng tiến (incremental).
+
+**7. Data Quality vs Validation**
+- Data Quality trả lời câu hỏi: **"Các giá trị dữ liệu có hợp lệ không?"** (Ví dụ: trường NULL, độ ẩm sai, lượng mưa âm, trùng lặp độ chi tiết).
+- Validation trả lời câu hỏi: **"Quá trình transformation có xử lý đẩy đủ lượng dữ liệu kỳ vọng không?"** (Ví dụ: thiếu ingestion, thiếu số giờ dự báo 48h, có ingestion ID lạ, sai lệch số dòng thực tế so với kỳ vọng).
+Cả hai điều kiện đều phải PASS trước khi ghi xuống Silver.
+
+**8. Data Quality Fail-Fast**
+Pipeline hiện tại không ép buộc chạy thành công bằng cách âm thầm làm sạch dữ liệu không hợp lệ. Khi phát hiện dữ liệu lỗi:
+- Data Quality thất bại.
+- Hủy thao tác ghi xuống Silver.
+- Các ingestion bị lỗi vẫn giữ nguyên trạng thái chưa xử lý (unprocessed).
+- Developer có thể kiểm tra vấn đề và đề xuất một chính sách xử lý tường minh.
+
+**9. Chạy Tăng tiến Rỗng (NO_OP Incremental Runs)**
+Việc không có ingestion chờ xử lý (pending) không phải là lỗi. Khi `Các ingestion ID Bronze đã commit = Các ingestion ID đã xử lý ở Silver`, pipeline sẽ trả về `NO_OP` và bỏ qua toàn bộ phần transformation hay ghi Silver. Điều này chứng minh các đơn vị ingestion đã xử lý trước đó không bao giờ bị xử lý lại vô ích.
+
+**10. Notebook vs Python Module**
+Logic transformation dành cho môi trường production phải nằm ở các module Python tái sử dụng. Các development notebooks chỉ nên dùng để: tài liệu hóa, khám phá dữ liệu, debug, và kiểm tra kết quả trung gian. Một runner notebook nhỏ (thin runner) sẽ được dùng riêng cho việc thực thi End-to-End. Việc này giúp luồng làm việc dễ hiểu và không trói buộc quá trình chạy production vào state tĩnh của notebook cell.
