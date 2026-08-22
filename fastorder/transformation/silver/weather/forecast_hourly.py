@@ -2,8 +2,6 @@ from pyspark.sql import DataFrame, SparkSession
 from delta.tables import DeltaTable
 from pyspark.sql.types import TimestampType
 from pyspark.sql import functions as F
-from utils import path_exists
-
     
 # Lấy ra danh sách các Paths đã commit (_SUCCESS)
 def discover_committed_forecast_ingestions(
