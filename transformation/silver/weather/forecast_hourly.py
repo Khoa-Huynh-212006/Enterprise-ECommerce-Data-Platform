@@ -349,21 +349,91 @@ def assert_forecast_data_quality(
         )
 
 
+def extract_ingestion_id_from_path(
+    ingestion_path: str,
+) -> str:
+    return (
+        ingestion_path
+        .rstrip("/")
+        .split("/")[-1]
+        .removeprefix("ingestion_id=")
+    )
 
+def profile_forecast_validation(
+    df: DataFrame,
+    pending_ingestion_paths: list[str],
+    expected_rows_per_ingestion: int = 48,
+) -> dict[str, int]:
 
+    pending_ingestion_ids = {
+        extract_ingestion_id_from_path(path)
+        for path in pending_ingestion_paths
+    }
 
+    pending_ingestion_count = len(
+        pending_ingestion_ids
+    )
 
+    expected_total_rows = (
+        pending_ingestion_count
+        * expected_rows_per_ingestion
+    )
 
+    actual_total_rows = df.count()
 
+    rows_per_ingestion = (
+        df
+        .groupBy("ingestion_id")
+        .count()
+    )
 
+    actual_ingestion_ids = {
+        row["ingestion_id"]
+        for row in (
+            rows_per_ingestion
+            .select("ingestion_id")
+            .collect()
+        )
+    }
 
+    missing_ingestion_ids = (
+        pending_ingestion_ids
+        - actual_ingestion_ids
+    )
 
+    unexpected_ingestion_ids = (
+        actual_ingestion_ids
+        - pending_ingestion_ids
+    )
 
+    invalid_row_count_ingestions = (
+        rows_per_ingestion
+        .filter(
+            F.col("count")
+            != expected_rows_per_ingestion
+        )
+        .count()
+    )
 
+    return {
+        "pending_ingestion_count":
+            pending_ingestion_count,
 
+        "actual_ingestion_count":
+            len(actual_ingestion_ids),
 
+        "expected_total_rows":
+            expected_total_rows,
 
+        "actual_total_rows":
+            actual_total_rows,
 
+        "missing_ingestion_count":
+            len(missing_ingestion_ids),
 
+        "unexpected_ingestion_count":
+            len(unexpected_ingestion_ids),
 
-
+        "invalid_row_count_ingestions":
+            invalid_row_count_ingestions,
+    }
