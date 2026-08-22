@@ -74,7 +74,10 @@ def load_pending_forecast_bronze(
     bronze_abfss_root: str,
 ) -> tuple[DataFrame, DataFrame]:
     if not pending_ingestion_paths:
-        raise ValueError("Không có pending Forecast ingestion để load.")
+        print(
+            "No pending Forecast ingestions. "
+            "Silver is already up to date."
+        )
 
     response_paths = [f"{bronze_abfss_root}/{path.lstrip('/')}/response.json" for path in pending_ingestion_paths]
     metadata_paths = [f"{bronze_abfss_root}/{path.lstrip('/')}/metadata.json" for path in pending_ingestion_paths]
@@ -489,3 +492,126 @@ def write_forecast_silver(
         .mode("append")
         .save(silver_path)
     )
+
+def prepare_forecast_silver_output(
+    df: DataFrame,
+) -> DataFrame:
+
+    return df.drop("_source_file_path")
+
+
+def run_weather_forecast_silver_pipeline(
+    spark: SparkSession,
+    bronze_client,
+    forecast_root: str,
+    bronze_abfss_root: str,
+    silver_path: str,
+) -> dict:
+
+    # 1. Discover committed Bronze
+    committed_ingestion_paths = (
+        discover_committed_forecast_ingestions(
+            bronze_client=bronze_client,
+            forecast_root=forecast_root,
+        )
+    )
+
+    # 2. Find already processed Silver ingestions
+    processed_ingestion_ids = (
+        get_processed_forecast_ingestion_ids(
+            spark=spark,
+            silver_path=silver_path,
+        )
+    )
+
+    # 3. Determine pending ingestions
+    pending_ingestion_paths = (
+        find_pending_forecast_ingestions(
+            committed_ingestion_paths,
+            processed_ingestion_ids,
+        )
+    )
+
+    # 4. Nothing new → successful NO-OP
+    if not pending_ingestion_paths:
+        return {
+            "status": "NO_OP",
+            "committed_ingestion_count": len(
+                committed_ingestion_paths
+            ),
+            "processed_ingestion_count": len(
+                processed_ingestion_ids
+            ),
+            "pending_ingestion_count": 0,
+            "written_row_count": 0,
+        }
+
+    # 5. Load pending Bronze
+    df_response, df_metadata = (
+        load_pending_forecast_bronze(
+            spark=spark,
+            pending_ingestion_paths=pending_ingestion_paths,
+            bronze_abfss_root=bronze_abfss_root,
+        )
+    )
+
+    # 6. Transform → Silver Candidate
+    df_silver_candidate = (
+        transform_forecast_hourly(
+            df_response=df_response,
+            df_metadata=df_metadata,
+        )
+    )
+
+    # 7. Data Quality
+    dq_result = profile_forecast_data_quality(
+        df_silver_candidate
+    )
+
+    assert_forecast_data_quality(
+        dq_result
+    )
+
+    # 8. Validation
+    validation_result = (
+        profile_forecast_validation(
+            df=df_silver_candidate,
+            pending_ingestion_paths=pending_ingestion_paths,
+        )
+    )
+
+    assert_forecast_validation(
+        validation_result
+    )
+
+    # 9. Prepare final Silver output
+    df_silver_output = (
+        prepare_forecast_silver_output(
+            df_silver_candidate
+        )
+    )
+
+    written_row_count = (
+        validation_result["actual_total_rows"]
+    )
+
+    # 10. Persist Silver
+    write_forecast_silver(
+        df=df_silver_output,
+        silver_path=silver_path,
+    )
+
+    return {
+        "status": "SUCCESS",
+        "committed_ingestion_count": len(
+            committed_ingestion_paths
+        ),
+        "processed_ingestion_count": len(
+            processed_ingestion_ids
+        ),
+        "pending_ingestion_count": len(
+            pending_ingestion_paths
+        ),
+        "written_row_count": written_row_count,
+    }
+
