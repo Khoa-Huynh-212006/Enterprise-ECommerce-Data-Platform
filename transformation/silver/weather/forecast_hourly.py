@@ -327,9 +327,26 @@ def profile_forecast_data_quality(
 
     return quality_result
 
-def assert_forecast_data_quality():
-    pass
 
+def assert_forecast_data_quality(
+    dq_result: dict[str, int],
+) -> None:
+
+    failed_checks = {
+        metric: count
+        for metric, count in dq_result.items()
+        if count != 0
+    }
+
+    if failed_checks:
+        error_details = ", ".join(
+            f"{metric}={count}"
+            for metric, count in failed_checks.items()
+        )
+
+        raise ValueError(
+            f"Forecast Data Quality FAILED: {error_details}"
+        )
 
 
 
