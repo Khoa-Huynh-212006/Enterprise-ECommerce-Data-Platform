@@ -227,8 +227,108 @@ def transform_forecast_hourly(
 
     return df
 
+def profile_forecast_data_quality(
+    df: DataFrame,
+) -> dict[str, int]:
 
+    quality_row = (
+        df
+        .select(
+            F.sum(
+                F.col("ingestion_id").isNull().cast("int")
+            ).alias("ingestion_id_null_count"),
 
+            F.sum(
+                F.col("warehouse_id").isNull().cast("int")
+            ).alias("warehouse_id_null_count"),
+
+            F.sum(
+                F.col("snapshot_at").isNull().cast("int")
+            ).alias("snapshot_at_null_count"),
+
+            F.sum(
+                F.col("retrieved_at").isNull().cast("int")
+            ).alias("retrieved_at_null_count"),
+
+            F.sum(
+                F.col("forecast_time").isNull().cast("int")
+            ).alias("forecast_time_null_count"),
+
+            F.sum(
+                F.col("temperature_2m").isNull().cast("int")
+            ).alias("temperature_2m_null_count"),
+
+            F.sum(
+                F.col("relative_humidity_2m").isNull().cast("int")
+            ).alias("relative_humidity_2m_null_count"),
+
+            F.sum(
+                F.col("precipitation").isNull().cast("int")
+            ).alias("precipitation_null_count"),
+
+            F.sum(
+                F.col("wind_speed_10m").isNull().cast("int")
+            ).alias("wind_speed_10m_null_count"),
+
+            F.sum(
+                F.col("weather_code").isNull().cast("int")
+            ).alias("weather_code_null_count"),
+
+            F.sum(
+                F.when(
+                    F.col("relative_humidity_2m") < 0,
+                    1,
+                ).otherwise(0)
+            ).alias("relative_humidity_2m_negative_count"),
+
+            F.sum(
+                F.when(
+                    F.col("relative_humidity_2m") > 100,
+                    1,
+                ).otherwise(0)
+            ).alias("relative_humidity_2m_above_100_count"),
+
+            F.sum(
+                F.when(
+                    F.col("precipitation") < 0,
+                    1,
+                ).otherwise(0)
+            ).alias("precipitation_negative_count"),
+
+            F.sum(
+                F.when(
+                    F.col("wind_speed_10m") < 0,
+                    1,
+                ).otherwise(0)
+            ).alias("wind_speed_10m_negative_count"),
+        )
+        .first()
+    )
+
+    duplicate_grain_count = (
+        df
+        .groupBy(
+            "warehouse_id",
+            "ingestion_id",
+            "forecast_time",
+        )
+        .count()
+        .filter(
+            F.col("count") > 1
+        )
+        .count()
+    )
+
+    quality_result = quality_row.asDict()
+
+    quality_result["duplicate_grain_count"] = (
+        duplicate_grain_count
+    )
+
+    return quality_result
+
+def assert_forecast_data_quality():
+    pass
 
 
 
