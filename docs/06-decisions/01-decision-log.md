@@ -492,3 +492,46 @@ Thiết kế này ngăn chặn việc xây dựng một notebook khổng lồ ô
 - Phân tách trách nhiệm rõ ràng (Separation of Concerns).
 - Hỗ trợ tốt xử lý incremental.
 - Tạo ra các Silver pipelines an toàn khi chạy lại (retry-safe).
+
+
+## D-038 — Thiết kế Data Quality và Transformation cho Silver Weather Forecast
+
+**Date:** 22/08/2026
+
+**Decision:**
+Pipeline Silver cho Weather Forecast được triển khai dưới dạng một pipeline PySpark transformation được module hóa, thay vì đặt toàn bộ logic production trực tiếp vào một Databricks notebook.
+
+Core implementation:
+`fastorder/transformation/silver/weather/forecast_hourly.py`
+
+Databricks notebook chủ yếu được sử dụng cho:
+- Tài liệu hóa (documentation)
+- Điều phối (orchestration)
+- Kiểm tra (inspection)
+- Xác thực phát triển (development validation)
+
+**Xử lý tăng tiến (Incremental Processing):**
+Chỉ các đơn vị ingestion Bronze Forecast chứa `_SUCCESS` mới đủ điều kiện để xử lý lên Silver.
+
+Các đơn vị ingestion chờ xử lý (Pending) được xác định bằng công thức:
+`Các ingestion ID Bronze đã commit - Các ingestion ID đã được lưu ở tầng Silver`
+
+Tập dữ liệu Silver giữ lại trường `ingestion_id` phục vụ cho data lineage và xử lý incremental.
+
+**Transformation:**
+Luồng transformation hoạt động như sau:
+Bronze response → trích xuất ngữ cảnh ingestion → làm phẳng (flatten) các mảng hourly → đính kèm ingestion metadata → chuẩn hóa các cột Silver → chuẩn hóa timestamp sang UTC → Silver Candidate.
+
+Các bản ghi Forecast hourly được join với metadata bằng LEFT JOIN để đảm bảo các metadata bị thiếu vẫn hiển thị và có thể bị phát hiện bởi các bài kiểm tra Data Quality, thay vì âm thầm loại bỏ các dòng Forecast.
+
+**Data Quality:**
+Data Quality được đánh giá trước khi ghi xuống Silver.
+Pipeline hiện tại kiểm tra:
+- Các trường định danh và timestamp bắt buộc
+- Các chỉ số thời tiết bị NULL
+- Độ ẩm nằm ngoài khoảng 0–100
+- Lượng mưa âm
+- Tốc độ gió âm
+- Trùng lặp khóa độ chi tiết Silver (duplicate Silver grain keys)
+
+Các bài kiểm tra Data Quality không tự động làm sạch hay sửa đổi các bản ghi không hợp lệ. Nếu bất kỳ chỉ số Data Quality trọng yếu nào lớn hơn 0, pipeline sẽ thất bại trước khi ghi xuống Silver.

@@ -103,3 +103,25 @@ Một bản ghi Weather ingestion ở Bronze chỉ đủ điều kiện nạp l�
 
 **4. Khác biệt giữa Notebook và Python Module**
 Databricks notebooks được sử dụng tối ưu nhất cho việc: giải thích (explanation), điều phối (orchestration), khám phá (exploration) và kiểm tra kết quả (inspecting results). Các logic transformation production tái sử dụng bắt buộc phải được chuyển vào các module Python. Cách tiếp cận này ngăn việc tầng Silver bị "phình to" thành một notebook duy nhất, đồng thời nâng cao khả năng bảo trì và testability.
+
+
+## Lớp Silver — Modular Transformation và Data Quality
+
+**1. Notebook so với Production Module**
+Một Databricks notebook không nên chứa toàn bộ logic transformation cho production. Notebook được sử dụng để giải thích và điều phối workflow, trong khi các logic PySpark có thể tái sử dụng phải được triển khai trong các module Python riêng biệt.
+
+**2. Xử lý Silver Tăng tiến (Incremental Silver Processing)**
+Một Spark DataFrame mang tính tạm thời và không thể được sử dụng làm persistent processing state. Trạng thái ingestion đã xử lý được tái tạo từ dữ liệu đã lưu (persisted) ở lớp Silver. Về mặt khái niệm:
+`Các ingestion ID Bronze đã commit - Các ingestion ID Silver đã lưu = Các ingestion ID đang pending`
+
+**3. Bulk Spark Reads (Đọc hàng loạt bằng Spark)**
+Việc duyệt File system có thể được sử dụng để khám phá các đường dẫn ingestion. Sau đó, Spark nên đọc các đường dẫn file đã chọn theo lô (bulk load) thay vì liên tục đọc từng ingestion đơn lẻ và union các DataFrame lại với nhau.
+
+**4. Silver Candidate**
+Quá trình transformation tạo ra một Silver Candidate trước khi bất kỳ dữ liệu nào được ghi xuống Silver. Silver Candidate đi qua các bước: Transformation → Data Quality → Validation → Silver Write.
+
+**5. Chất lượng dữ liệu (Data Quality)**
+Việc profiling Data Quality giúp đo lường các vi phạm mà không tự động sửa đổi tập dữ liệu. Mỗi metric DQ hiện tại tuân theo quy tắc: `0 = PASS`, `> 0 = FAIL`. Các bản ghi không hợp lệ sẽ không bị âm thầm điền (fill), loại bỏ (drop), hoặc khử trùng lặp (deduplicated) nếu không có một chính sách xử lý rõ ràng.
+
+**6. Spark Driver**
+Các phép Spark transformation thực thi phân tán trên các executors, trong khi các control logic của Python chạy trên Driver. Các thao tác như `collect()` sẽ tải kết quả từ các executor về lại bộ nhớ của Driver và chỉ nên được sử dụng khi tập dữ liệu kết quả được xác định chắc chắn là nhỏ.

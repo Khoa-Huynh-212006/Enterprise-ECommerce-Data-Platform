@@ -705,3 +705,27 @@ Landing Prepared
 **Kết quả**
 
 - Quá trình chuyển đổi dữ liệu lên Silver đã có bộ khung vững chắc và khả năng trích xuất metadata chính xác.
+
+
+## Mốc 27 — Hoàn tất Transformation cho Silver Weather Forecast 
+
+### Tháng 8/2026
+
+**Đã thực hiện:**
+- Định nghĩa độ chi tiết (grain) và schema cho tập dữ liệu Silver `weather_forecast_hourly`.
+- Thiết kế quá trình xử lý incremental từ Bronze → Silver.
+- Triển khai cơ chế khám phá các đơn vị ingestion Bronze đã commit.
+- Triển khai cơ chế phát hiện các ingestion ID đã được xử lý ở Silver.
+- Triển khai cơ chế chọn lọc các ingestion pending.
+- Triển khai bulk load từ Bronze cho các đơn vị ingestion Forecast đang pending.
+- Trích xuất ingestion lineage từ các đường dẫn nguồn (source paths).
+- Làm phẳng (flatten) các mảng hourly của Open-Meteo thành các bản ghi Forecast theo giờ.
+- Đính kèm ingestion metadata sử dụng `ingestion_id`.
+- Chuẩn hóa ngữ nghĩa các cột Silver.
+- Chuẩn hóa timestamp của Forecast sang múi giờ UTC.
+- Tái cấu trúc logic transformation thành các hàm Python có thể tái sử dụng.
+- Triển khai profiling và assertion cho Data Quality.
+- Hoàn thành giai đoạn transformation tạo ra Silver Candidate.
+
+**Bước tiếp theo:** 
+- Validation cho Silver transformation.
