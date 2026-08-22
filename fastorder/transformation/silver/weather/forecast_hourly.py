@@ -71,12 +71,13 @@ def find_pending_forecast_ingestions(
 def load_pending_forecast_bronze(
     spark: SparkSession,
     pending_ingestion_paths: list[str],
+    bronze_abfss_root: str,
 ) -> tuple[DataFrame, DataFrame]:
     if not pending_ingestion_paths:
         raise ValueError("Không có pending Forecast ingestion để load.")
 
-    response_paths = [f"{path}/response.json" for path in pending_ingestion_paths]
-    metadata_paths = [f"{path}/metadata.json" for path in pending_ingestion_paths]
+    response_paths = [f"{bronze_abfss_root}/{path.lstrip('/')}/response.json" for path in pending_ingestion_paths]
+    metadata_paths = [f"{bronze_abfss_root}/{path.lstrip('/')}/metadata.json" for path in pending_ingestion_paths]
 
     df_response = spark.read.format("json").option("multiline", True).load(response_paths) #bulk load
     df_metadata = spark.read.format("json").option("multiline", True).load(metadata_paths)
