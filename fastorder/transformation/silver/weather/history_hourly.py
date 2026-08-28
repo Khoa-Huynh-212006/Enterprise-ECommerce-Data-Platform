@@ -1,7 +1,7 @@
 from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
-
-
+from pyspark.sql.window import Window
+from delta.tables import DeltaTable
 
 
 def extract_history_ingestion_context(
@@ -325,9 +325,9 @@ def profile_history_data_quality(
     return dq_row
 
 
-
 def assert_history_data_quality(
     dq_result: dict[str, int],
+    allow_duplicate_grain: bool = False,
 ) -> None:
 
     failed_checks = {
@@ -336,13 +336,19 @@ def assert_history_data_quality(
         if count != 0
     }
 
+    if allow_duplicate_grain:
+        failed_checks.pop(
+            "duplicate_grain_count",
+            None,
+        )
+
     if failed_checks:
         raise ValueError(
             "Historical Forecast Data Quality FAILED: "
             f"{failed_checks}"
         )
 
-def build_history_ingestion_validation_summary(
+def build_history_actual_validation_summary(
     df: DataFrame,
 ) -> DataFrame:
 
@@ -419,8 +425,39 @@ def extract_history_ingestion_id_from_path(
         .removeprefix("ingestion_id=")
     )
 
+def build_history_expected_validation_summary(
+    df_metadata: DataFrame,
+) -> DataFrame:
+
+    return (
+        df_metadata
+        .select(
+            "ingestion_id",
+
+            F.col("request_params.start_date")
+                .cast("date")
+                .alias("window_start"),
+
+            F.col("request_params.end_date")
+                .cast("date")
+                .alias("window_end"),
+        )
+        .withColumn(
+            "expected_day_count",
+            F.datediff(
+                F.col("window_end"),
+                F.col("window_start"),
+            ) + F.lit(1),
+        )
+        .withColumn(
+            "expected_row_count",
+            F.col("expected_day_count") * F.lit(24),
+        )
+    )
+
 def profile_history_validation(
     df: DataFrame,
+    df_metadata: DataFrame,
     pending_ingestion_paths: list[str],
 ) -> dict[str, int]:
 
@@ -429,61 +466,41 @@ def profile_history_validation(
         for path in pending_ingestion_paths
     }
 
-    summary = (
+    expected_summary = (
+        build_history_expected_validation_summary(
+            df_metadata
+        )
+    )
+
+    actual_summary = (
         build_history_ingestion_validation_summary(
             df
         )
     )
 
-    actual_ingestion_ids = {
+    metadata_ingestion_ids = {
         row["ingestion_id"]
         for row in (
-            summary
+            expected_summary
             .select("ingestion_id")
+            .distinct()
             .collect()
         )
     }
 
-    expected_total_rows = (
-        summary
-        .agg(
-            F.sum("expected_row_count")
-                .alias("expected_total_rows")
+    actual_ingestion_ids = {
+        row["ingestion_id"]
+        for row in (
+            actual_summary
+            .select("ingestion_id")
+            .distinct()
+            .collect()
         )
-        .first()["expected_total_rows"]
-        or 0
-    )
+    }
 
-    actual_total_rows = df.count()
-
-    invalid_row_count_ingestions = (
-        summary
-        .filter(
-            F.col("actual_row_count")
-            != F.col("expected_row_count")
-        )
-        .count()
-    )
-
-    invalid_distinct_hour_ingestions = (
-        summary
-        .filter(
-            F.col("distinct_weather_hour_count")
-            != F.col("expected_row_count")
-        )
-        .count()
-    )
-
-    invalid_time_range_ingestions = (
-        summary
-        .filter(
-            (F.col("actual_start_time")
-             != F.col("expected_start_time"))
-            |
-            (F.col("actual_end_time")
-             != F.col("expected_end_time"))
-        )
-        .count()
+    missing_metadata_ids = (
+        expected_ingestion_ids
+        - metadata_ingestion_ids
     )
 
     missing_ingestion_ids = (
@@ -496,9 +513,79 @@ def profile_history_validation(
         - expected_ingestion_ids
     )
 
+    expected_total_rows = (
+        expected_summary
+        .agg(
+            F.sum("expected_row_count")
+                .alias("expected_total_rows")
+        )
+        .first()["expected_total_rows"]
+        or 0
+    )
+
+    actual_total_rows = df.count()
+
+    validation_comparison = (
+        actual_summary
+        .select(
+            "ingestion_id",
+            "actual_row_count",
+            "distinct_weather_hour_count",
+            "actual_start_time",
+            "actual_end_time",
+            "expected_start_time",
+            "expected_end_time",
+        )
+        .join(
+            expected_summary.select(
+                "ingestion_id",
+                "expected_row_count",
+            ),
+            on="ingestion_id",
+            how="left",
+        )
+    )
+
+    invalid_row_count_ingestions = (
+        validation_comparison
+        .filter(
+            F.col("actual_row_count")
+            != F.col("expected_row_count")
+        )
+        .count()
+    )
+
+    invalid_distinct_hour_ingestions = (
+        validation_comparison
+        .filter(
+            F.col("distinct_weather_hour_count")
+            != F.col("expected_row_count")
+        )
+        .count()
+    )
+
+    invalid_time_range_ingestions = (
+        validation_comparison
+        .filter(
+            (
+                F.col("actual_start_time")
+                != F.col("expected_start_time")
+            )
+            |
+            (
+                F.col("actual_end_time")
+                != F.col("expected_end_time")
+            )
+        )
+        .count()
+    )
+
     return {
         "pending_ingestion_count":
             len(expected_ingestion_ids),
+
+        "metadata_ingestion_count":
+            len(metadata_ingestion_ids),
 
         "actual_ingestion_count":
             len(actual_ingestion_ids),
@@ -508,6 +595,9 @@ def profile_history_validation(
 
         "actual_total_rows":
             actual_total_rows,
+
+        "missing_metadata_count":
+            len(missing_metadata_ids),
 
         "missing_ingestion_count":
             len(missing_ingestion_ids),
@@ -543,6 +633,7 @@ def assert_history_validation(
         }
 
     for metric in [
+        "missing_metadata_count",
         "missing_ingestion_count",
         "unexpected_ingestion_count",
         "invalid_row_count_ingestions",
@@ -603,3 +694,400 @@ def load_pending_history_bronze(
     )
 
     return df_response, df_metadata
+
+
+def resolve_history_overlaps(
+    df: DataFrame,
+) -> DataFrame:
+
+    weather_fields = [
+        "temperature_2m",
+        "relative_humidity_2m",
+        "precipitation",
+        "wind_speed_10m",
+        "weather_code",
+    ]
+
+    conflicting_overlap_count = (
+        df
+        .groupBy(
+            "warehouse_id",
+            "weather_time",
+        )
+        .agg(
+            F.countDistinct(
+                F.struct(
+                    *[
+                        F.col(column)
+                        for column in weather_fields
+                    ]
+                )
+            ).alias("weather_version_count")
+        )
+        .filter(
+            F.col("weather_version_count") > 1
+        )
+        .count()
+    )
+
+    if conflicting_overlap_count > 0:
+        raise ValueError(
+            "Historical overlap reconciliation FAILED: "
+            f"{conflicting_overlap_count} business keys "
+            "contain conflicting weather values."
+        )
+
+    window_spec = (
+        Window
+        .partitionBy(
+            "warehouse_id",
+            "weather_time",
+        )
+        .orderBy(
+            F.col("retrieved_at").desc(),
+            F.col("ingestion_id").desc(),
+        )
+    )
+
+    return (
+        df
+        .withColumn(
+            "_overlap_rank",
+            F.row_number().over(window_spec),
+        )
+        .filter(
+            F.col("_overlap_rank") == 1
+        )
+        .drop(
+            "_overlap_rank"
+        )
+    )
+
+
+def prepare_history_silver_output(
+    df: DataFrame,
+) -> DataFrame:
+
+    return (
+        df
+        .select(
+            "warehouse_id",
+            "weather_time",
+            "ingestion_id",
+            "retrieved_at",
+            "window_start",
+            "window_end",
+
+            "temperature_2m",
+            "relative_humidity_2m",
+            "precipitation",
+            "wind_speed_10m",
+            "weather_code",
+
+            "requested_latitude",
+            "requested_longitude",
+            "response_latitude",
+            "response_longitude",
+        )
+    )
+
+def assert_no_conflicting_history_with_silver(
+    spark: SparkSession,
+    df_incoming: DataFrame,
+    silver_path: str,
+) -> None:
+
+    if not DeltaTable.isDeltaTable(
+        spark,
+        silver_path,
+    ):
+        return
+
+    df_existing = (
+        spark.read
+        .format("delta")
+        .load(silver_path)
+    )
+
+    df_matches = (
+        df_incoming.alias("incoming")
+        .join(
+            df_existing.alias("existing"),
+            on=[
+                "warehouse_id",
+                "weather_time",
+            ],
+            how="inner",
+        )
+    )
+
+    conflicting_count = (
+        df_matches
+        .filter(
+            ~F.col(
+                "incoming.temperature_2m"
+            ).eqNullSafe(
+                F.col("existing.temperature_2m")
+            )
+            |
+            ~F.col(
+                "incoming.relative_humidity_2m"
+            ).eqNullSafe(
+                F.col(
+                    "existing.relative_humidity_2m"
+                )
+            )
+            |
+            ~F.col(
+                "incoming.precipitation"
+            ).eqNullSafe(
+                F.col("existing.precipitation")
+            )
+            |
+            ~F.col(
+                "incoming.wind_speed_10m"
+            ).eqNullSafe(
+                F.col("existing.wind_speed_10m")
+            )
+            |
+            ~F.col(
+                "incoming.weather_code"
+            ).eqNullSafe(
+                F.col("existing.weather_code")
+            )
+        )
+        .count()
+    )
+
+    if conflicting_count > 0:
+        raise ValueError(
+            "Historical Silver conflict FAILED: "
+            f"{conflicting_count} business keys "
+            "contain different weather values "
+            "between incoming data and existing Silver."
+        )
+
+def merge_history_silver(
+    spark: SparkSession,
+    df: DataFrame,
+    silver_path: str,
+) -> None:
+
+    if not DeltaTable.isDeltaTable(
+        spark,
+        silver_path,
+    ):
+        (
+            df.write
+            .format("delta")
+            .mode("overwrite")
+            .save(silver_path)
+        )
+
+        return
+
+    target = (
+        DeltaTable.forPath(
+            spark,
+            silver_path,
+        )
+    )
+
+    (
+        target.alias("target")
+        .merge(
+            df.alias("source"),
+            """
+            target.warehouse_id = source.warehouse_id
+            AND
+            target.weather_time = source.weather_time
+            """,
+        )
+        .whenMatchedUpdateAll(
+            condition=(
+                "source.retrieved_at "
+                "> target.retrieved_at"
+            )
+        )
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+
+def build_history_processed_ingestions(
+    df_metadata: DataFrame,
+) -> DataFrame:
+
+    return (
+        df_metadata
+        .select(
+            "ingestion_id",
+            "warehouse_id",
+
+            F.col("request_params.start_date")
+                .cast("date")
+                .alias("window_start"),
+
+            F.col("request_params.end_date")
+                .cast("date")
+                .alias("window_end"),
+
+            F.col("requested_at")
+                .cast("timestamp")
+                .alias("retrieved_at"),
+        )
+        .dropDuplicates(
+            ["ingestion_id"]
+        )
+        .withColumn(
+            "silver_processed_at",
+            F.current_timestamp(),
+        )
+    )    
+
+
+
+def mark_history_ingestions_processed(
+    spark: SparkSession,
+    df_processed_ingestions: DataFrame,
+    control_path: str,
+) -> None:
+
+    if not DeltaTable.isDeltaTable(
+        spark,
+        control_path,
+    ):
+        (
+            df_processed_ingestions.write
+            .format("delta")
+            .mode("overwrite")
+            .save(control_path)
+        )
+
+        return
+
+    target = (
+        DeltaTable.forPath(
+            spark,
+            control_path,
+        )
+    )
+
+    (
+        target.alias("target")
+        .merge(
+            df_processed_ingestions.alias("source"),
+            (
+                "target.ingestion_id "
+                "= source.ingestion_id"
+            ),
+        )
+        .whenNotMatchedInsertAll()
+        .execute()
+    )
+
+def get_processed_history_ingestion_ids(
+    spark: SparkSession,
+    control_path: str,
+) -> set[str]:
+
+    if not DeltaTable.isDeltaTable(
+        spark,
+        control_path,
+    ):
+        return set()
+
+    rows = (
+        spark.read
+        .format("delta")
+        .load(control_path)
+        .select("ingestion_id")
+        .distinct()
+        .collect()
+    )
+
+    return {
+        row["ingestion_id"]
+        for row in rows
+    }
+
+
+def discover_committed_history_ingestions(
+    bronze_client,
+    history_root: str,
+) -> list[str]:
+
+    committed_ingestion_paths = []
+
+    paths = bronze_client.get_paths(
+        path=history_root,
+        recursive=True,
+    )
+
+    for path in paths:
+
+        if (
+            not path.is_directory
+            and path.name.endswith("/_SUCCESS")
+        ):
+            ingestion_path = (
+                path.name.removesuffix("/_SUCCESS")
+            )
+
+            committed_ingestion_paths.append(
+                ingestion_path
+            )
+
+    return sorted(
+        committed_ingestion_paths
+    )
+
+
+def find_pending_history_ingestions(
+    committed_ingestion_paths: list[str],
+    processed_ingestion_ids: set[str],
+) -> list[str]:
+
+    pending_ingestion_paths = []
+
+    for ingestion_path in committed_ingestion_paths:
+
+        ingestion_id = (
+            extract_history_ingestion_id_from_path(
+                ingestion_path
+            )
+        )
+
+        if ingestion_id not in processed_ingestion_ids:
+            pending_ingestion_paths.append(
+                ingestion_path
+            )
+
+    return sorted(
+        pending_ingestion_paths
+    )
+
+
+def get_processed_history_ingestion_ids(
+    spark: SparkSession,
+    control_path: str,
+) -> set[str]:
+
+    if not DeltaTable.isDeltaTable(
+        spark,
+        control_path,
+    ):
+        return set()
+
+    rows = (
+        spark.read
+        .format("delta")
+        .load(control_path)
+        .select("ingestion_id")
+        .distinct()
+        .collect()
+    )
+
+    return {
+        row["ingestion_id"]
+        for row in rows
+    }
