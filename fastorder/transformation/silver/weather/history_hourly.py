@@ -321,3 +321,21 @@ def profile_history_data_quality(
 
     return dq_row
 
+
+
+def assert_history_data_quality(
+    dq_result: dict[str, int],
+) -> None:
+
+    failed_checks = {
+        metric: count
+        for metric, count in dq_result.items()
+        if count != 0
+    }
+
+    if failed_checks:
+        raise ValueError(
+            "Historical Forecast Data Quality FAILED: "
+            f"{failed_checks}"
+        )
+
