@@ -597,3 +597,173 @@ Hai Databricks notebooks mang hai trách nhiệm riêng biệt:
 - `weather_hourly`: Dành cho phát triển, học tập, kiểm tra transformation, kiểm tra Data Quality và kiểm tra validation.
 - `weather_forecast_silver_pipeline`: Dành cho thực thi End-to-End, phát hiện pending data, xử lý NO_OP và ghi dữ liệu Silver.
 Sự phân tách này ngăn việc notebook phát triển trở thành entry point cho production pipeline.
+
+
+
+## D-040 — Weather History Silver Processing Design
+
+**Date:** 29/08/2026
+
+### Bối cảnh
+
+Open-Meteo Historical Forecast được lưu tại Bronze theo từng ingestion window.
+
+Mỗi ingestion hoàn chỉnh gồm:
+
+- `response.json`
+- `metadata.json`
+- `_SUCCESS`
+
+Historical Bronze có thể chứa các ingestion window bị overlap do backfill hoặc chạy lại một khoảng thời gian đã tồn tại trước đó.
+
+Silver cần tạo một chuỗi historical weather canonical theo giờ cho từng warehouse.
+
+### Dataset đích
+
+Dataset:
+
+`weather_history_hourly`
+
+Business grain:
+
+`warehouse_id + weather_time`
+
+Mỗi warehouse chỉ có một canonical weather record tại một historical hour.
+
+`ingestion_id` được giữ lại để phục vụ lineage nhưng không thuộc business grain.
+
+### Incremental Processing
+
+Chỉ những Bronze ingestion có `_SUCCESS` mới đủ điều kiện xử lý.
+
+Historical processing state không được suy ra từ `ingestion_id` trong canonical Silver.
+
+Lý do:
+
+Một ingestion có thể đã được xử lý thành công nhưng toàn bộ hoặc một phần record của nó bị loại trong quá trình overlap reconciliation.
+
+Do đó Historical sử dụng control Delta dataset riêng:
+
+`weather_history_processed_ingestions`
+
+Pending ingestion được xác định:
+
+`Committed Bronze - Processed Control`
+
+### Transformation
+
+Transformation flow:
+
+`Bronze response`
+→ `Extract ingestion context`
+→ `Flatten hourly arrays`
+→ `Attach metadata`
+→ `Standardize columns`
+→ `Normalize time`
+→ `Raw Historical Candidate`
+
+Historical weather time được chuẩn hóa:
+
+`Asia/Ho_Chi_Minh`
+→ `UTC`
+
+### Raw Data Quality
+
+Raw Data Quality kiểm tra:
+
+- NULL identity và timestamp
+- NULL weather measurements
+- humidity ngoài khoảng 0–100
+- precipitation âm
+- wind speed âm
+- historical window không hợp lệ
+
+Duplicate theo:
+
+`warehouse_id + weather_time`
+
+được phép tồn tại tạm thời ở Raw Candidate vì có thể xuất phát từ overlapping historical ingestion windows.
+
+### Ingestion Validation
+
+Mỗi ingestion được validation độc lập trước overlap reconciliation.
+
+Expected hourly rows được tính động:
+
+`(window_end - window_start + 1) × 24`
+
+Expected contract được xây dựng từ Bronze metadata.
+
+Actual result được lấy từ Raw Historical Candidate.
+
+Validation kiểm tra:
+
+- pending ingestion coverage
+- metadata coverage
+- expected vs actual row count
+- distinct historical hour coverage
+- expected vs actual time range
+- missing và unexpected ingestion
+
+### Overlap Reconciliation
+
+Historical ingestion windows có thể overlap.
+
+Policy hiện tại:
+
+- Nếu cùng `warehouse_id + weather_time` nhưng weather values khác nhau → FAIL.
+- Nếu weather values giống nhau → giữ một canonical record.
+- Record có `retrieved_at` mới nhất được ưu tiên.
+- `ingestion_id` được dùng làm deterministic tie-breaker.
+
+Sau reconciliation, business grain phải unique.
+
+### Final Data Quality
+
+Resolved Historical Candidate được kiểm tra lại toàn bộ Data Quality rules.
+
+Ở giai đoạn này:
+
+`duplicate_grain_count` bắt buộc bằng `0`.
+
+### Silver Persistence
+
+Canonical Historical Silver sử dụng Delta MERGE theo:
+
+`warehouse_id + weather_time`
+
+Nếu key chưa tồn tại:
+
+→ INSERT
+
+Nếu key đã tồn tại và incoming `retrieved_at` mới hơn:
+
+→ UPDATE canonical lineage/context
+
+Weather-value conflict phải được phát hiện trước MERGE.
+
+### Processing State
+
+Sau khi canonical Silver write thành công, toàn bộ ingestion thuộc batch được ghi vào:
+
+`weather_history_processed_ingestions`
+
+Thứ tự persistence:
+
+`Canonical MERGE`
+→ `Verification`
+→ `Mark ingestion processed`
+
+Control state không được ghi trước canonical data để đảm bảo failed batch có thể retry.
+
+### Replay Behavior
+
+Khi:
+
+`Committed Bronze = Processed Control`
+
+pipeline trả:
+
+`NO_OP`
+
+và không thực hiện Transformation, Data Quality, Validation hoặc Silver Write.

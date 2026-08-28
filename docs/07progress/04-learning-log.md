@@ -165,3 +165,136 @@ Việc không có ingestion chờ xử lý (pending) không phải là lỗi. Kh
 
 **10. Notebook vs Python Module**
 Logic transformation dành cho môi trường production phải nằm ở các module Python tái sử dụng. Các development notebooks chỉ nên dùng để: tài liệu hóa, khám phá dữ liệu, debug, và kiểm tra kết quả trung gian. Một runner notebook nhỏ (thin runner) sẽ được dùng riêng cho việc thực thi End-to-End. Việc này giúp luồng làm việc dễ hiểu và không trói buộc quá trình chạy production vào state tĩnh của notebook cell.
+
+
+## Weather History Silver — Learning Notes
+
+### Business Grain khác Ingestion Grain
+
+Bronze được tổ chức theo ingestion.
+
+Silver Historical được tổ chức theo business grain:
+
+`warehouse_id + weather_time`
+
+Một ingestion có thể chứa hàng trăm hourly records và nhiều ingestion khác nhau có thể
+cùng mô tả một historical hour.
+
+Do đó ingestion identity và business identity phải được xem là hai khái niệm khác nhau.
+
+### Overlapping Backfill Windows
+
+Historical backfill có thể tạo ra các ingestion window bị overlap.
+
+Một overlap thực tế được phát hiện trong FastOrder:
+
+`2026-08-10 → 2026-08-12`
+
+nằm bên trong:
+
+`2026-07-17 → 2026-08-15`
+
+Ba ngày overlap tạo ra:
+
+`3 × 24 = 72`
+
+duplicate historical business keys.
+
+Đây không phải lỗi Transformation mà là đặc tính có thể xuất hiện trong ingestion history.
+
+### Raw Candidate và Resolved Candidate
+
+Historical pipeline sử dụng hai trạng thái candidate:
+
+`Raw Historical Candidate`
+
+chứa toàn bộ dữ liệu của từng ingestion trước reconciliation.
+
+`Resolved Historical Candidate`
+
+là canonical dataset sau khi overlapping business keys đã được xử lý.
+
+Điều này cho phép pipeline validation từng ingestion trước khi loại duplicate khỏi
+canonical dataset.
+
+### Validation phải diễn ra trước Reconciliation
+
+Mỗi ingestion phải được chứng minh là đầy đủ trước khi overlap records bị loại.
+
+Nếu reconciliation được thực hiện trước ingestion validation, một ingestion overlap có thể
+mất rows và tạo false validation failure.
+
+Do đó thứ tự đúng:
+
+`Raw Candidate`
+→ `Ingestion Validation`
+→ `Overlap Reconciliation`
+
+### Expected và Actual phải độc lập
+
+Expected validation contract phải đến từ Bronze metadata:
+
+`start_date + end_date`
+
+Actual result phải đến từ transformed DataFrame.
+
+Không được suy expected row count từ chính actual output vì điều đó có thể che giấu
+missing ingestion.
+
+### Canonical Data và Processing State
+
+Canonical Silver không phải nơi phù hợp để suy ra toàn bộ processing state.
+
+Một ingestion có thể đã được xử lý nhưng không còn row đại diện trong canonical dataset
+sau reconciliation.
+
+Do đó Historical tách:
+
+`weather_history_hourly`
+= canonical business data
+
+`weather_history_processed_ingestions`
+= processing state
+
+### Delta MERGE
+
+Historical sử dụng MERGE vì business grain phải unique xuyên qua nhiều incremental run.
+
+MERGE key:
+
+`warehouse_id + weather_time`
+
+Điều này khác Forecast, nơi `ingestion_id` là một phần của grain và nhiều Forecast
+snapshot cho cùng forecast hour là hợp lệ.
+
+### Safe Commit Ordering
+
+Processing control chỉ được ghi sau canonical Silver write thành công.
+
+An toàn:
+
+`Canonical SUCCESS`
+→ `Control SUCCESS`
+
+Nếu control write fail, batch có thể retry vì MERGE idempotent theo business key.
+
+Không an toàn:
+
+`Control SUCCESS`
+→ `Canonical FAIL`
+
+vì ingestion có thể bị đánh dấu processed dù business data chưa được persist.
+
+### NO_OP
+
+Không có pending ingestion là một trạng thái thành công.
+
+Historical pipeline sử dụng:
+
+`Committed Bronze IDs - Processed Control IDs = Pending IDs`
+
+Nếu tập Pending rỗng:
+
+`NO_OP`
+
+Pipeline không tiếp tục load hoặc transform dữ liệu.

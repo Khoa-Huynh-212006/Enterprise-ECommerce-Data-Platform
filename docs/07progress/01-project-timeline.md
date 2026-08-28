@@ -781,3 +781,73 @@ Hoàn thành pipeline Silver đầu tiên của dự án FastOrder sử dụng d
 - Tạo mới `weather_forecast_silver_pipeline` làm runner cho pipeline End-to-End.
 
 **Trạng thái Mốc: HOÀN TOÀN COMPLETE**
+
+
+## Mốc 28 — Hoàn thành pipeline Silver cho Open-Meteo Historical Forecast.
+
+### Silver Design
+
+- Xây dựng dataset `weather_history_hourly`.
+- Grain:
+  `warehouse_id + weather_time`.
+- Chuẩn hóa historical weather timestamp sang UTC.
+- Giữ ingestion lineage trong canonical Silver.
+
+### Transformation
+
+- Bulk load toàn bộ pending Historical ingestion.
+- Extract `ingestion_id` từ Bronze source path.
+- Flatten các Open-Meteo hourly arrays.
+- Attach Bronze metadata.
+- Chuẩn hóa column semantics.
+- Chuẩn hóa timezone `Asia/Ho_Chi_Minh → UTC`.
+
+### Data Quality
+
+- Kiểm tra NULL.
+- Kiểm tra humidity range.
+- Kiểm tra precipitation và wind speed âm.
+- Kiểm tra historical window.
+- Phân biệt duplicate hợp lệ tạm thời ở Raw Candidate với duplicate không hợp lệ ở
+  Final Silver Candidate.
+
+### Ingestion Validation
+
+- Expected rows được tính động từ `window_start` và `window_end`.
+- Kiểm tra ingestion coverage.
+- Kiểm tra metadata coverage.
+- Kiểm tra row count.
+- Kiểm tra distinct hourly coverage.
+- Kiểm tra historical time range.
+
+### Overlap Reconciliation
+
+Phát hiện một historical backfill overlap thực tế:
+
+- 16 committed Historical ingestions.
+- Một ingestion `WH_HCM` từ `2026-08-10 → 2026-08-12` overlap với window
+  `2026-07-17 → 2026-08-15`.
+- Phát hiện 72 duplicate business keys.
+- 72 duplicate hours có cùng weather values.
+- Thực hiện deterministic reconciliation trước Final Data Quality.
+
+### Silver Persistence
+
+- Sử dụng Delta MERGE cho canonical Historical Silver.
+- Tách canonical business data khỏi ingestion processing state.
+- Tạo Delta control dataset:
+  `weather_history_processed_ingestions`.
+- Persist canonical Silver trước processing control state.
+- Xác nhận canonical business grain không duplicate.
+- Xác nhận toàn bộ processed ingestion được lưu trong control dataset.
+
+### End-to-End
+
+- Tạo `weather_history_silver_pipeline`.
+- Implement committed Bronze discovery.
+- Implement processed-control lookup.
+- Implement pending ingestion detection.
+- Implement successful `NO_OP`.
+- Replay test thành công.
+
+**Milestone status: COMPLETE**
