@@ -1,5 +1,8 @@
-from pyspark.sql import DataFrame
+from pyspark.sql import DataFrame, SparkSession
 from pyspark.sql import functions as F
+
+
+
 
 def extract_history_ingestion_context(
     df_response: DataFrame,
@@ -339,3 +342,264 @@ def assert_history_data_quality(
             f"{failed_checks}"
         )
 
+def build_history_ingestion_validation_summary(
+    df: DataFrame,
+) -> DataFrame:
+
+    summary = (
+        df
+        .groupBy(
+            "ingestion_id",
+            "warehouse_id",
+            "window_start",
+            "window_end",
+        )
+        .agg(
+            F.count("*")
+                .alias("actual_row_count"),
+
+            F.countDistinct("weather_time")
+                .alias("distinct_weather_hour_count"),
+
+            F.min("weather_time")
+                .alias("actual_start_time"),
+
+            F.max("weather_time")
+                .alias("actual_end_time"),
+        )
+        .withColumn(
+            "expected_day_count",
+            F.datediff(
+                F.col("window_end"),
+                F.col("window_start"),
+            ) + F.lit(1),
+        )
+        .withColumn(
+            "expected_row_count",
+            F.col("expected_day_count") * F.lit(24),
+        )
+        .withColumn(
+            "expected_start_time",
+            F.to_utc_timestamp(
+                F.to_timestamp(
+                    F.concat(
+                        F.col("window_start").cast("string"),
+                        F.lit(" 00:00:00"),
+                    )
+                ),
+                "Asia/Ho_Chi_Minh",
+            ),
+        )
+        .withColumn(
+            "expected_end_time",
+            F.to_utc_timestamp(
+                F.to_timestamp(
+                    F.concat(
+                        F.col("window_end").cast("string"),
+                        F.lit(" 23:00:00"),
+                    )
+                ),
+                "Asia/Ho_Chi_Minh",
+            ),
+        )
+    )
+
+    return summary
+
+
+
+def extract_history_ingestion_id_from_path(
+    ingestion_path: str,
+) -> str:
+
+    return (
+        ingestion_path
+        .rstrip("/")
+        .split("/")[-1]
+        .removeprefix("ingestion_id=")
+    )
+
+def profile_history_validation(
+    df: DataFrame,
+    pending_ingestion_paths: list[str],
+) -> dict[str, int]:
+
+    expected_ingestion_ids = {
+        extract_history_ingestion_id_from_path(path)
+        for path in pending_ingestion_paths
+    }
+
+    summary = (
+        build_history_ingestion_validation_summary(
+            df
+        )
+    )
+
+    actual_ingestion_ids = {
+        row["ingestion_id"]
+        for row in (
+            summary
+            .select("ingestion_id")
+            .collect()
+        )
+    }
+
+    expected_total_rows = (
+        summary
+        .agg(
+            F.sum("expected_row_count")
+                .alias("expected_total_rows")
+        )
+        .first()["expected_total_rows"]
+        or 0
+    )
+
+    actual_total_rows = df.count()
+
+    invalid_row_count_ingestions = (
+        summary
+        .filter(
+            F.col("actual_row_count")
+            != F.col("expected_row_count")
+        )
+        .count()
+    )
+
+    invalid_distinct_hour_ingestions = (
+        summary
+        .filter(
+            F.col("distinct_weather_hour_count")
+            != F.col("expected_row_count")
+        )
+        .count()
+    )
+
+    invalid_time_range_ingestions = (
+        summary
+        .filter(
+            (F.col("actual_start_time")
+             != F.col("expected_start_time"))
+            |
+            (F.col("actual_end_time")
+             != F.col("expected_end_time"))
+        )
+        .count()
+    )
+
+    missing_ingestion_ids = (
+        expected_ingestion_ids
+        - actual_ingestion_ids
+    )
+
+    unexpected_ingestion_ids = (
+        actual_ingestion_ids
+        - expected_ingestion_ids
+    )
+
+    return {
+        "pending_ingestion_count":
+            len(expected_ingestion_ids),
+
+        "actual_ingestion_count":
+            len(actual_ingestion_ids),
+
+        "expected_total_rows":
+            int(expected_total_rows),
+
+        "actual_total_rows":
+            actual_total_rows,
+
+        "missing_ingestion_count":
+            len(missing_ingestion_ids),
+
+        "unexpected_ingestion_count":
+            len(unexpected_ingestion_ids),
+
+        "invalid_row_count_ingestions":
+            invalid_row_count_ingestions,
+
+        "invalid_distinct_hour_ingestions":
+            invalid_distinct_hour_ingestions,
+
+        "invalid_time_range_ingestions":
+            invalid_time_range_ingestions,
+    }
+    
+def assert_history_validation(
+    validation_result: dict[str, int],
+) -> None:
+
+    failed_checks = {}
+
+    if (
+        validation_result["expected_total_rows"]
+        != validation_result["actual_total_rows"]
+    ):
+        failed_checks["total_row_count_mismatch"] = {
+            "expected":
+                validation_result["expected_total_rows"],
+            "actual":
+                validation_result["actual_total_rows"],
+        }
+
+    for metric in [
+        "missing_ingestion_count",
+        "unexpected_ingestion_count",
+        "invalid_row_count_ingestions",
+        "invalid_distinct_hour_ingestions",
+        "invalid_time_range_ingestions",
+    ]:
+
+        if validation_result[metric] != 0:
+            failed_checks[metric] = (
+                validation_result[metric]
+            )
+
+    if failed_checks:
+        raise ValueError(
+            "Historical Forecast Validation FAILED: "
+            f"{failed_checks}"
+        )
+
+def load_pending_history_bronze(
+    spark: SparkSession,
+    pending_ingestion_paths: list[str],
+    bronze_abfss_root: str,
+) -> tuple[DataFrame, DataFrame]:
+
+    if not pending_ingestion_paths:
+        raise ValueError(
+            "Không có pending Historical ingestion để load."
+        )
+
+    response_paths = [
+        (
+            f"{bronze_abfss_root}/"
+            f"{path.lstrip('/')}/response.json"
+        )
+        for path in pending_ingestion_paths
+    ]
+
+    metadata_paths = [
+        (
+            f"{bronze_abfss_root}/"
+            f"{path.lstrip('/')}/metadata.json"
+        )
+        for path in pending_ingestion_paths
+    ]
+
+    df_response = (
+        spark.read
+        .format("json")
+        .option("multiline", True)
+        .load(response_paths)
+    )
+
+    df_metadata = (
+        spark.read
+        .format("json")
+        .option("multiline", True)
+        .load(metadata_paths)
+    )
+
+    return df_response, df_metadata
