@@ -298,3 +298,39 @@ Nếu tập Pending rỗng:
 `NO_OP`
 
 Pipeline không tiếp tục load hoặc transform dữ liệu.
+
+
+## PostgreSQL Generic Ingestion — Learning Notes
+
+### Tại sao Timestamp-only Watermark không đủ?
+
+Nếu chỉ sử dụng cột timestamp, các bản ghi có cùng thời gian cập nhật nằm tại
+biên của batch sẽ bị duplicate hoặc bị bỏ sót do thiếu thứ tự phân giải.
+
+### Primary Key Tie-breaker
+
+Kết hợp `timestamp` và `primary_key` tạo ra một strict ordering cursor.
+
+Ngay cả khi có nhiều bản ghi phát sinh trong cùng một mili-giây, PK tie-breaker
+đảm bảo mỗi bản ghi có một vị trí duy nhất trong chuỗi pagination.
+
+### Customers Proof-of-Generality
+
+Bảng Customers chứa ~99k rows chia sẻ chính xác cùng một mốc timestamp.
+
+Nhờ cơ chế cursor `(updated_at, customer_id)`, framework vẫn pagination mượt mà
+qua toàn bộ khối dữ liệu đồng thời này mà không bị lặp hay sót bất kỳ dòng nào.
+
+### Deterministic Extraction ID
+
+ID của mỗi extraction batch được tạo deterministic từ cấu hình bảng và state.
+
+Điều này đảm bảo đường dẫn lưu trữ Bronze không thay đổi giữa các lần Airflow retry,
+đảm bảo tính lũy đẳng (idempotency) thông qua an toàn ghi đè.
+
+### Checkpoint và Pending Recovery
+
+Sử dụng flat checkpoint format và crash-recovery protocol giúp hệ thống cô lập.
+
+Trạng thái PENDING cho phép framework nhận diện chính xác điểm crash và
+resume đúng state mà không cần truy vấn lại hệ thống nguồn từ đầu.

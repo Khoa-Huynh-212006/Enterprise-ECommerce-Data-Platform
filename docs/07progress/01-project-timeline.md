@@ -850,4 +850,19 @@ Phát hiện một historical backfill overlap thực tế:
 - Implement successful `NO_OP`.
 - Replay test thành công.
 
+
+## Mốc 29 — Generic PostgreSQL Incremental Framework Completed.
+
+**Milestone status: COMPLETE**
+
+Nâng cấp thành công luồng ingestion Operational PostgreSQL từ hardcode cục bộ
+thành framework config-driven tổng quát.
+
+### Đã thực hiện
+
+- Chuyển đổi kiến trúc sang config-driven generic incremental framework.
+- Tích hợp cursor pagination hỗ trợ composite PK.
+- Orders regression test: PASS.
+- Customers proof-of-generality test: PASS.
+
 **Milestone status: COMPLETE**

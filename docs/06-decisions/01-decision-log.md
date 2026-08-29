@@ -767,3 +767,28 @@ pipeline trả:
 `NO_OP`
 
 và không thực hiện Transformation, Data Quality, Validation hoặc Silver Write.
+
+## D-041 — Generic PostgreSQL Incremental Ingestion Framework
+
+**Date:** 30/08/2026
+
+### Bối cảnh
+
+PostgreSQL ingestion ban đầu được hardcode riêng cho bảng `orders`.
+
+Để mở rộng cho toàn bộ database, hệ thống cần một cơ chế generic để tái sử dụng
+logic incremental extraction, pagination và crash recovery.
+
+### Quyết định
+
+Chuyển đổi Orders-specific ingestion sang config-driven generic incremental framework.
+
+### Chi tiết thiết kế
+
+Sử dụng cursor dựa trên tuple:
+
+`(watermark_column, primary_key...)`
+
+Framework hỗ trợ khai báo Composite Primary Key.
+
+Giữ nguyên crash-recovery protocol và flat checkpoint format đã được chứng minh.
