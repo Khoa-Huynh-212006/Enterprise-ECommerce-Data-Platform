@@ -792,3 +792,23 @@ Sử dụng cursor dựa trên tuple:
 Framework hỗ trợ khai báo Composite Primary Key.
 
 Giữ nguyên crash-recovery protocol và flat checkpoint format đã được chứng minh.
+
+
+
+## D-041 — DAG Factory cho Operational Tables Ingestion
+
+**Date:** 30/08/2026
+### Bối cảnh
+
+Hệ thống cần tạo Airflow DAG cho hàng loạt bảng PostgreSQL (Orders, Customers, Products...).
+Việc nhân bản (copy-paste) file DAG cho từng bảng sẽ dẫn đến phình to code và khó bảo trì.
+
+### Quyết định
+
+Sử dụng pattern DAG Factory để tạo tự động một DAG độc lập cho mỗi operational table dựa trên cấu hình (config-driven).
+
+### Chi tiết thiết kế
+
+Một vòng lặp Python sẽ đọc danh sách cấu hình bảng (bao gồm tên bảng, cursor config) và gọi hàm sinh DAG.
+Mỗi bảng được cấp một DAG ID riêng biệt.
+Luồng điều phối (orchestration logic) được tập trung tại một nơi duy nhất, đảm bảo tính DRY (Don't Repeat Yourself).

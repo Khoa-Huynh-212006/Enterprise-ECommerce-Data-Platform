@@ -334,3 +334,22 @@ Sử dụng flat checkpoint format và crash-recovery protocol giúp hệ thốn
 
 Trạng thái PENDING cho phép framework nhận diện chính xác điểm crash và
 resume đúng state mà không cần truy vấn lại hệ thống nguồn từ đầu.
+
+
+## Airflow DAG Factory — Learning Notes
+
+### Factory Pattern
+
+DAG Factory giải quyết bài toán mở rộng (scale) số lượng pipelines chia sẻ cùng một logic.
+Thay vì tạo nhiều file DAG thủ công, hệ thống sử dụng một file duy nhất duyệt qua danh sách cấu hình bảng để register nhiều DAG độc lập vào Airflow.
+
+### DAG Parse Time vs Task Runtime
+
+Logic sinh DAG (Factory) chạy trong quá trình Airflow Scheduler parse file định kỳ.
+Tuyệt đối không đặt các tác vụ I/O nặng hoặc query database ở global scope của file factory.
+Nếu không, Scheduler sẽ bị nghẽn (parse timeout). Mọi thao tác xử lý dữ liệu phải nằm hoàn toàn bên trong Task Runtime.
+
+### Tính độc lập của DAG và Checkpoint
+
+Dù chia sẻ cùng một code base từ Factory, mỗi bảng bắt buộc phải vận hành trên một DAG riêng và sở hữu checkpoint độc lập.
+Tính cô lập (isolation) đảm bảo: một lỗi ingestion hoặc downtime ở bảng này không làm sập tiến trình của các bảng khác, và mỗi bảng có thể replay/backfill an toàn.

@@ -865,4 +865,17 @@ thành framework config-driven tổng quát.
 - Orders regression test: PASS.
 - Customers proof-of-generality test: PASS.
 
+
+
+## Mốc 30 — Customers Production Bootstrap & Replay
+
+**Milestone status: COMPLETE**
+Triển khai generic PostgreSQL framework cho bảng Customers trên production.
+
+### Đã thực hiện
+
+- Thiết lập DAG Factory để tự động sinh pipeline.
+- Chạy thành công quá trình tải dữ liệu ban đầu (bootstrap) cho tập dữ liệu Customers.
+- Customers production bootstrap + replay: PASS.
+
 **Milestone status: COMPLETE**

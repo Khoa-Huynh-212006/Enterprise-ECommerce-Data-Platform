@@ -10,6 +10,6 @@ Generic framework ✅
 
 Orders ✅
 
-Customers validation ✅
+Customers ✅
 
 Productionize remaining tables ⏳
