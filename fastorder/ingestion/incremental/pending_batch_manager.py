@@ -1,16 +1,23 @@
 import json
 import os
+
 from pathlib import Path
 from datetime import datetime
 from typing import Dict, Any, Optional
+
+from fastorder.ingestion.incremental.table_config import (
+    IncrementalTableConfig,
+    get_table_config,
+)
+
 
 PENDING_CONTEXT_VERSION = 1
 TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
 
 def _parse_timestamp(value: str) -> datetime:
-    """Validate và parse timestamp chuẩn canonical ISO 8601 Naive (6 chữ số thập phân)."""
+    "Validate và parse timestamp chuẩn canonical ISO 8601 Naive (6 chữ số thập phân)."
     if not isinstance(value, str):
-        raise ValueError("updated_at phải là chuỗi.")
+        raise ValueError("Watermark timestamp phải là chuỗi")
 
     try:
         parsed = datetime.strptime(value, TIMESTAMP_FORMAT)
@@ -23,24 +30,93 @@ def _parse_timestamp(value: str) -> datetime:
 
     return parsed
 
-def _watermark_key(watermark: Dict[str, str]):
-    """Tạo tuple (datetime, order_id) để so sánh thứ tự Composite Watermark."""
+def _watermark_key(
+    watermark: Dict[str, Any],
+    config: IncrementalTableConfig,
+) -> tuple:
+    "Tạo tuple (datetime, order_id) để so sánh thứ tự Composite Watermark"
+
     return (
-        _parse_timestamp(watermark["updated_at"]),
-        watermark["order_id"]
+        _parse_timestamp(
+            watermark[
+                config.watermark_column
+            ]
+        ),
+        *(
+            watermark[column]
+            for column
+            in config.primary_key_columns
+        ),
     )
+
+
+def _validate_watermark(
+    watermark: Dict[str, Any],
+    watermark_name: str,
+    config: IncrementalTableConfig,
+) -> None:
+
+    if not isinstance(
+        watermark,
+        dict,
+    ):
+        raise ValueError(
+            f"Watermark '{watermark_name}' "
+            "phải là dictionary."
+        )
+
+    if (
+        config.watermark_column
+        not in watermark
+    ):
+        raise ValueError(
+            f"Watermark '{watermark_name}' "
+            f"thiếu column "
+            f"'{config.watermark_column}'."
+        )
+
+    _parse_timestamp(
+        watermark[
+            config.watermark_column
+        ]
+    )
+
+    for column, initial_value in zip(
+        config.primary_key_columns,
+        config.initial_primary_key_values,
+    ):
+
+        if column not in watermark:
+            raise ValueError(
+                f"Watermark '{watermark_name}' "
+                f"thiếu primary key "
+                f"'{column}'."
+            )
+
+        value = watermark[column]
+
+        if type(value) is not type(
+            initial_value
+        ):
+            raise ValueError(
+                f"Watermark '{watermark_name}.{column}' "
+                "sai kiểu dữ liệu. "
+                f"Kỳ vọng "
+                f"{type(initial_value).__name__}, "
+                f"nhận {type(value).__name__}."
+            )
 
 def build_pending_batch_context(
     table_name: str,
     run_id: str,
-    run_upper_watermark: Dict[str, str],
-    lower_watermark: Dict[str, str],
-    batch_upper_watermark: Dict[str, str],
+    run_upper_watermark: Dict[str, Any],
+    lower_watermark: Dict[str, Any],
+    batch_upper_watermark: Dict[str, Any],
     extraction_id: str,
     ingested_at: str,
     batch_size: int
 ) -> Dict[str, Any]:
-    """Tạo dictionary cấu trúc của Pending Batch Context."""
+    "Tạo dictionary cấu trúc của Pending Batch Context."
     return {
         "version": PENDING_CONTEXT_VERSION,
         "table_name": table_name,
@@ -53,56 +129,130 @@ def build_pending_batch_context(
         "batch_size": batch_size
     }
 
-def validate_pending_batch_context(context: Dict[str, Any], expected_table_name: str) -> None:
-    """Kiểm định chặt chẽ cấu trúc, kiểu dữ liệu và định luật Watermark của Pending Context."""
-    
-    # 1. Validation Cơ bản
-    if not isinstance(context, dict):
-        raise ValueError("Pending context phải là dictionary.")
-    if not isinstance(expected_table_name, str) or not expected_table_name.strip():
-        raise ValueError("expected_table_name phải là chuỗi không rỗng.")
+def validate_pending_batch_context(
+    context: Dict[str, Any],
+    expected_table_name: str,
+) -> None:
 
-    if context.get("version") != PENDING_CONTEXT_VERSION:
-        raise ValueError(f"Pending context version không hợp lệ. Kỳ vọng: {PENDING_CONTEXT_VERSION}")
+    "Kiểm định chặt chẽ cấu trúc, kiểu dữ liệu và định luật Watermark của Pending Context."
 
-    if context.get("table_name") != expected_table_name:
-        raise ValueError(f"Table name sai lệch. Kỳ vọng: '{expected_table_name}', Nhận: '{context.get('table_name')}'")
+    config = get_table_config(
+        expected_table_name
+    )
 
-    # 2. Kiểm tra các trường chuỗi bắt buộc
-    for key in ("table_name", "run_id", "extraction_id", "ingested_at"):
-        value = context.get(key)
-        if not isinstance(value, str) or not value.strip():
-            raise ValueError(f"Trường '{key}' phải là chuỗi không rỗng.")
-
-    # 3. Kiểm tra Integer (Chặn boolean hack của Python)
-    batch_size = context.get("batch_size")
-    if not isinstance(batch_size, int) or isinstance(batch_size, bool) or batch_size <= 0:
-        raise ValueError("batch_size phải là số nguyên > 0.")
-
-    # 4. Kiểm tra cấu trúc các khối Watermark
-    watermark_keys = ["run_upper_watermark", "lower_watermark", "batch_upper_watermark"]
-    for wm_key in watermark_keys:
-        wm_obj = context.get(wm_key)
-        if not isinstance(wm_obj, dict):
-            raise ValueError(f"Watermark '{wm_key}' bị thiếu hoặc không phải dictionary.")
-        if "updated_at" not in wm_obj or "order_id" not in wm_obj:
-            raise ValueError(f"Watermark '{wm_key}' sai cấu trúc. Cần có 'updated_at' và 'order_id'.")
-        if not isinstance(wm_obj["order_id"], str):
-            raise ValueError(f"order_id trong '{wm_key}' phải là chuỗi.")
-
-    # 5. Kiểm tra Định luật thứ tự Watermark (Invariant: lower < batch_upper <= run_upper)
-    lower_key = _watermark_key(context["lower_watermark"])
-    batch_upper_key = _watermark_key(context["batch_upper_watermark"])
-    run_upper_key = _watermark_key(context["run_upper_watermark"])
-
-    if not (lower_key < batch_upper_key <= run_upper_key):
+    # 1. Basic structure
+    if not isinstance(
+        context,
+        dict,
+    ):
         raise ValueError(
-            "Watermark phải thỏa mãn định luật: lower_watermark < batch_upper_watermark <= run_upper_watermark. "
-            f"Thực tế: lower={lower_key}, batch_upper={batch_upper_key}, run_upper={run_upper_key}"
+            "Pending context phải là dictionary."
+        )
+
+    if (
+        context.get("version")
+        != PENDING_CONTEXT_VERSION
+    ):
+        raise ValueError(
+            "Pending context version không hợp lệ. "
+            f"Kỳ vọng: {PENDING_CONTEXT_VERSION}"
+        )
+
+    if (
+        context.get("table_name")
+        != config.table_name
+    ):
+        raise ValueError(
+            "Table name sai lệch. "
+            f"Kỳ vọng '{config.table_name}', "
+            f"nhận '{context.get('table_name')}'."
+        )
+
+    # 2. Required string fields
+    for key in (
+        "table_name",
+        "run_id",
+        "extraction_id",
+        "ingested_at",
+    ):
+
+        value = context.get(key)
+
+        if (
+            not isinstance(value, str)
+            or not value.strip()
+        ):
+            raise ValueError(
+                f"Trường '{key}' phải là "
+                "chuỗi không rỗng."
+            )
+
+    # 3. Batch size
+    batch_size = context.get(
+        "batch_size"
+    )
+
+    if (
+        not isinstance(batch_size, int)
+        or isinstance(batch_size, bool)
+        or batch_size <= 0
+    ):
+        raise ValueError(
+            "batch_size phải là số nguyên > 0."
+        )
+
+    # 4. Validate all watermarks
+    watermark_names = (
+        "run_upper_watermark",
+        "lower_watermark",
+        "batch_upper_watermark",
+    )
+
+    for watermark_name in watermark_names:
+
+        _validate_watermark(
+            watermark=context.get(
+                watermark_name
+            ),
+            watermark_name=
+                watermark_name,
+            config=config,
+        )
+
+    # 5. Watermark ordering invariant
+    lower_key = _watermark_key(
+        context["lower_watermark"],
+        config,
+    )
+
+    batch_upper_key = _watermark_key(
+        context["batch_upper_watermark"],
+        config,
+    )
+
+    run_upper_key = _watermark_key(
+        context["run_upper_watermark"],
+        config,
+    )
+
+    if not (
+        lower_key
+        < batch_upper_key
+        <= run_upper_key
+    ):
+        raise ValueError(
+            "Watermark phải thỏa mãn: "
+            "lower_watermark "
+            "< batch_upper_watermark "
+            "<= run_upper_watermark. "
+            f"Thực tế: "
+            f"lower={lower_key}, "
+            f"batch_upper={batch_upper_key}, "
+            f"run_upper={run_upper_key}"
         )
 
 def load_pending_batch_context(file_path: Path, expected_table_name: str) -> Optional[Dict[str, Any]]:
-    """Đọc và Validate Pending Context từ đĩa."""
+    "Đọc và Validate Pending Context từ đĩa."
     if not file_path.exists():
         return None
         
@@ -233,13 +383,25 @@ if __name__ == "__main__":
         bad_wm_3 = valid_context.copy()
         bad_wm_3["run_upper_watermark"] = {"updated_at": "2026-08-01T12:00:00.000000", "order_id": "000"}
 
-        for bad_ctx in [bad_wm_1, bad_wm_2, bad_wm_3]:
+        for bad_ctx in [
+            bad_wm_1,
+            bad_wm_2,
+            bad_wm_3,
+        ]:
             try:
-                save_pending_batch_context_atomic(test_path, bad_ctx, "orders")
-                assert False, "Lọt lưới Watermark sai thứ tự!"
-            except ValueError as e:
-                assert "thỏa mãn định luật" in str(e)
-        print("Test 7: Định luật Watermark Invariant hoạt động hoàn hảo.")
+                save_pending_batch_context_atomic(
+                    test_path,
+                    bad_ctx,
+                    "orders",
+                )
+
+            except ValueError:
+                pass
+
+            else:
+                raise AssertionError(
+                    "Lọt lưới Watermark sai thứ tự!"
+                )
 
         # 8. Delete Idempotent
         delete_pending_batch_context(test_path)
