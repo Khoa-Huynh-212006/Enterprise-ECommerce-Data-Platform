@@ -1,0 +1,9 @@
+{
+    "version": 1,
+    "table_name": "inventory",
+    "watermark": {
+        "updated_at": "2026-08-11T00:49:48.290718",
+        "warehouse_id": "WH_DN",
+        "product_id": "c7caa8b7b6e51a771b10a6565125b0f4"
+    }
+}

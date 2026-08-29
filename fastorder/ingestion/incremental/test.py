@@ -1,192 +1,288 @@
-from datetime import datetime
+import io
+import json
+from pathlib import Path
 
-from fastorder.db.connection import (
-    get_engine,
-)
+import pandas as pd
 
-from fastorder.ingestion.incremental.table_config import (
-    ORDER_ITEMS_CONFIG,
-    ORDER_PAYMENTS_CONFIG,
-    ORDER_REVIEWS_CONFIG,
-)
-
-from fastorder.ingestion.incremental.table_extractor import (
-    get_upper_watermark,
-    extract_table_batch,
+from fastorder.storage.adls_client import (
+    get_bronze_file_system_client,
 )
 
 
-TIMESTAMP_FORMAT = (
-    "%Y-%m-%dT%H:%M:%S.%f"
-)
-
-TIMESTAMP_EPOCH = (
-    "1970-01-01T00:00:00.000000"
+CHECKPOINT_PATH = Path(
+    "/opt/airflow/state/checkpoints/"
+    "orders_checkpoint.json"
 )
 
 
-CONFIGS = (
-    ORDER_ITEMS_CONFIG,
-    ORDER_PAYMENTS_CONFIG,
-    ORDER_REVIEWS_CONFIG,
-)
+def main():
 
-
-def build_initial_watermark(config):
-
-    watermark = {
-        config.watermark_column:
-            TIMESTAMP_EPOCH,
-    }
-
-    for column, value in zip(
-        config.primary_key_columns,
-        config.initial_primary_key_values,
-    ):
-        watermark[column] = value
-
-    return watermark
-
-
-def watermark_key(
-    watermark,
-    config,
-):
-    return (
-        datetime.strptime(
-            watermark[
-                config.watermark_column
-            ],
-            TIMESTAMP_FORMAT,
-        ),
-        *(
-            watermark[column]
-            for column
-            in config.primary_key_columns
-        ),
+    print(
+        "=" * 80
+    )
+    print(
+        "ORDERS BRONZE DIAGNOSTIC"
+    )
+    print(
+        "=" * 80
     )
 
+    # -------------------------------------------------
+    # 1. Checkpoint
+    # -------------------------------------------------
 
-def primary_key(
-    record,
-    config,
-):
-    return tuple(
-        record[column]
-        for column
-        in config.primary_key_columns
+    print(
+        "\n[1] CURRENT CHECKPOINT"
     )
 
+    if CHECKPOINT_PATH.exists():
 
-engine = get_engine()
+        checkpoint = json.loads(
+            CHECKPOINT_PATH.read_text()
+        )
 
+        print(
+            json.dumps(
+                checkpoint,
+                indent=4,
+                ensure_ascii=False,
+            )
+        )
 
-with engine.connect() as conn:
+    else:
 
-    for config in CONFIGS:
+        print(
+            "Checkpoint không tồn tại."
+        )
+
+    # -------------------------------------------------
+    # 2. Bronze files
+    # -------------------------------------------------
+
+    fs_client = (
+        get_bronze_file_system_client()
+    )
+
+    paths = [
+        path.name
+        for path in fs_client.get_paths(
+            path="orders",
+            recursive=True,
+        )
+        if (
+            not path.is_directory
+            and path.name.endswith(
+                "/part-000.parquet"
+            )
+        )
+    ]
+
+    print(
+        "\n[2] BRONZE FILES"
+    )
+
+    print(
+        f"Total parquet files: "
+        f"{len(paths)}"
+    )
+
+    summary = []
+
+    all_order_ids = set()
+
+    production_order_ids = set()
+
+    test_order_ids = set()
+
+    for path in sorted(paths):
+
+        parts = path.split("/")
+
+        extraction_part = next(
+            (
+                part
+                for part in parts
+                if part.startswith(
+                    "extraction_id="
+                )
+            ),
+            None,
+        )
+
+        if extraction_part is None:
+
+            extraction_id = (
+                "<UNKNOWN>"
+            )
+
+        else:
+
+            extraction_id = (
+                extraction_part.split(
+                    "=",
+                    1,
+                )[1]
+            )
+
+        is_test = (
+            extraction_id.startswith(
+                "test_"
+            )
+        )
+
+        raw = (
+            fs_client
+            .get_file_client(path)
+            .download_file()
+            .readall()
+        )
+
+        df = pd.read_parquet(
+            io.BytesIO(raw)
+        )
+
+        order_ids = set(
+            df["order_id"]
+            .astype(str)
+            .tolist()
+        )
+
+        all_order_ids.update(
+            order_ids
+        )
+
+        if is_test:
+
+            test_order_ids.update(
+                order_ids
+            )
+
+        else:
+
+            production_order_ids.update(
+                order_ids
+            )
+
+        if len(df) > 0:
+
+            min_updated_at = (
+                pd.to_datetime(
+                    df["updated_at"]
+                ).min()
+            )
+
+            max_updated_at = (
+                pd.to_datetime(
+                    df["updated_at"]
+                ).max()
+            )
+
+        else:
+
+            min_updated_at = None
+            max_updated_at = None
+
+        summary.append(
+            {
+                "extraction_id":
+                    extraction_id,
+
+                "is_test":
+                    is_test,
+
+                "rows":
+                    len(df),
+
+                "distinct_orders":
+                    len(order_ids),
+
+                "min_updated_at":
+                    min_updated_at,
+
+                "max_updated_at":
+                    max_updated_at,
+
+                "path":
+                    path,
+            }
+        )
+
+    # -------------------------------------------------
+    # 3. Per-file result
+    # -------------------------------------------------
+
+    print(
+        "\n[3] PER FILE"
+    )
+
+    for item in summary:
 
         print(
             "\n"
-            + "=" * 60
+            f"Extraction : "
+            f"{item['extraction_id']}\n"
+
+            f"Test       : "
+            f"{item['is_test']}\n"
+
+            f"Rows       : "
+            f"{item['rows']}\n"
+
+            f"Orders     : "
+            f"{item['distinct_orders']}\n"
+
+            f"Min updated: "
+            f"{item['min_updated_at']}\n"
+
+            f"Max updated: "
+            f"{item['max_updated_at']}\n"
+
+            f"Path       : "
+            f"{item['path']}"
         )
 
-        print(
-            f"TEST TABLE: "
-            f"{config.table_name}"
-        )
+    # -------------------------------------------------
+    # 4. Overall summary
+    # -------------------------------------------------
 
-        initial = (
-            build_initial_watermark(
-                config
-            )
-        )
+    print(
+        "\n"
+        + "=" * 80
+    )
 
-        upper = get_upper_watermark(
-            conn=conn,
-            config=config,
-        )
+    print(
+        "SUMMARY"
+    )
 
-        assert upper is not None
+    print(
+        "=" * 80
+    )
 
-        print(
-            "Upper:",
-            upper,
-        )
+    print(
+        f"All Bronze distinct orders : "
+        f"{len(all_order_ids)}"
+    )
 
-        batch_1, wm_1 = (
-            extract_table_batch(
-                conn=conn,
-                config=config,
-                lower_watermark=initial,
-                upper_watermark=upper,
-                batch_size=5,
-            )
-        )
+    print(
+        f"Production distinct orders : "
+        f"{len(production_order_ids)}"
+    )
 
-        assert len(batch_1) == 5
+    print(
+        f"Test distinct orders       : "
+        f"{len(test_order_ids)}"
+    )
 
-        batch_2, wm_2 = (
-            extract_table_batch(
-                conn=conn,
-                config=config,
-                lower_watermark=wm_1,
-                upper_watermark=upper,
-                batch_size=5,
-            )
-        )
+    print(
+        f"Production parquet files   : "
+        f"{sum(not x['is_test'] for x in summary)}"
+    )
 
-        assert len(batch_2) == 5
-
-        pk_1 = {
-            primary_key(
-                row,
-                config,
-            )
-            for row in batch_1
-        }
-
-        pk_2 = {
-            primary_key(
-                row,
-                config,
-            )
-            for row in batch_2
-        }
-
-        assert pk_1.isdisjoint(
-            pk_2
-        )
-
-        assert (
-            watermark_key(
-                wm_1,
-                config,
-            )
-            <
-            watermark_key(
-                wm_2,
-                config,
-            )
-        )
-
-        print(
-            "Batch 1 watermark:",
-            wm_1,
-        )
-
-        print(
-            "Batch 2 watermark:",
-            wm_2,
-        )
-
-        print(
-            f"[PASS] "
-            f"{config.table_name}"
-        )
+    print(
+        f"Test parquet files         : "
+        f"{sum(x['is_test'] for x in summary)}"
+    )
 
 
-print(
-    "\n"
-    "WAVE 2 COMPOSITE EXTRACTOR: "
-    "PERFECT PASS"
-)
+if __name__ == "__main__":
+    main()

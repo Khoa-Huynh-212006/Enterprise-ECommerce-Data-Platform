@@ -2,8 +2,8 @@
     "version": 1,
     "table_name": "order_payments",
     "watermark": {
-        "updated_at": "2026-08-06T09:13:56.155074",
-        "order_id": "d14dc05cf3bfcbba3b03996ec5899999",
+        "updated_at": "2026-08-11T00:49:48.202412",
+        "order_id": "197cfb0fe73f44b18c389ebfb4e8dcd6",
         "payment_sequential": 1
     }
 }

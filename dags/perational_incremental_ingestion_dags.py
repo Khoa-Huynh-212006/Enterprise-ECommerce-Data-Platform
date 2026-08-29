@@ -305,3 +305,11 @@ incremental_order_reviews_dag = (
         batch_size=5000,
     )
 )
+
+
+incremental_inventory_dag = (
+    build_incremental_table_dag(
+        table_name="inventory",
+        batch_size=5000,
+    )
+)

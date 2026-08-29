@@ -3,7 +3,7 @@
     "table_name": "order_reviews",
     "watermark": {
         "updated_at": "2026-08-06T09:13:56.155074",
-        "review_id": "c0f1c34af3e924982d9e71b3eb34ead9",
-        "order_id": "96ad8ef0669dc53c0830b44376e975f5"
+        "review_id": "fffefe7a48d22f7b32046421062219d1",
+        "order_id": "1061bc32577c6b8beb107bf1b5a65175"
     }
 }

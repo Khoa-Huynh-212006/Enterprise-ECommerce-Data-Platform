@@ -353,3 +353,24 @@ Nếu không, Scheduler sẽ bị nghẽn (parse timeout). Mọi thao tác xử 
 
 Dù chia sẻ cùng một code base từ Factory, mỗi bảng bắt buộc phải vận hành trên một DAG riêng và sở hữu checkpoint độc lập.
 Tính cô lập (isolation) đảm bảo: một lỗi ingestion hoặc downtime ở bảng này không làm sập tiến trình của các bảng khác, và mỗi bảng có thể replay/backfill an toàn.
+
+## PostgreSQL Generic Ingestion — Wave 2 Learning Notes
+
+### Composite Watermark với Mixed PK Types
+
+Cấu trúc cursor `(updated_at, *primary_key_columns)` hoạt động ổn định kể cả khi các bảng có kiểu dữ liệu Primary Key hỗn hợp (mixed PK types) hoặc sử dụng composite keys phức tạp. Việc unpack `*primary_key_columns` vào cursor giúp framework tự động thích ứng với định dạng định danh của từng bảng mà không cần hardcode logic phân giải (tie-breaker) riêng biệt.
+
+## Operational PostgreSQL Bronze — Learning Notes
+
+### Airflow Success != Data Correctness
+
+Việc Task trong Airflow báo trạng thái success hoặc file checkpoint ghi nhận thành công chưa đủ để chứng minh tính chính xác của dữ liệu (data correctness). 
+
+### Control Plane vs Data Plane
+
+Cần phân biệt rõ trạng thái của luồng điều phối (Control Plane) với trạng thái và chất lượng thực tế của dữ liệu được ghi xuống (Data Plane). Sự cố lệch dữ liệu có thể xảy ra ở Data Plane ngay cả khi Control Plane báo xanh.
+
+### E2E Reconciliation
+
+Để khẳng định dữ liệu toàn vẹn, bắt buộc phải thực hiện đối soát End-to-End (E2E reconciliation) tạo thành một vòng khép kín:
+`Source ↔ Checkpoint ↔ Bronze`

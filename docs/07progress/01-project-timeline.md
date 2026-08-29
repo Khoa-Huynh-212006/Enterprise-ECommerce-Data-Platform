@@ -879,3 +879,27 @@ Triển khai generic PostgreSQL framework cho bảng Customers trên production.
 - Customers production bootstrap + replay: PASS.
 
 **Milestone status: COMPLETE**
+
+
+## Mốc 31 — Operational Bronze Wave 2 Completed
+
+Triển khai thành công generic PostgreSQL framework cho nhóm bảng phụ thuộc (wave 2).
+
+### Đã thực hiện
+
+- Operational Bronze Wave 2 completed.
+- Hoàn tất bootstrap và xử lý incremental cho các bảng chi tiết đơn hàng và giao dịch.
+
+**Milestone status: COMPLETE**
+
+## Mốc 32 — Operational PostgreSQL Bronze Completed
+
+Hoàn thành toàn bộ luồng Ingestion từ Operational PostgreSQL lên lớp Bronze.
+
+### Đã thực hiện
+
+- Operational PostgreSQL Bronze COMPLETE.
+- E2E validation PASS 11/11 bảng.
+- Thực hiện Orders controlled re-bootstrap sau khi phát hiện legacy test artifacts.
+
+**Milestone status: COMPLETE**

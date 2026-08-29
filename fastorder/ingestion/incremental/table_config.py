@@ -310,6 +310,30 @@ ORDER_REVIEWS_CONFIG = IncrementalTableConfig(
     ),
 )
 
+INVENTORY_CONFIG = IncrementalTableConfig(
+    table_name="inventory",
+
+    primary_key_columns=(
+        "warehouse_id",
+        "product_id",
+    ),
+
+    initial_primary_key_values=(
+        "",
+        "",
+    ),
+
+    watermark_column="updated_at",
+
+    select_columns=(
+        "warehouse_id",
+        "product_id",
+        "quantity_available",
+        "created_at",
+        "updated_at",
+    ),
+)
+
 TABLE_CONFIGS = {
     ORDERS_CONFIG.table_name:
         ORDERS_CONFIG,
@@ -340,6 +364,9 @@ TABLE_CONFIGS = {
 
     ORDER_REVIEWS_CONFIG.table_name:
         ORDER_REVIEWS_CONFIG,
+        
+    INVENTORY_CONFIG.table_name:
+        INVENTORY_CONFIG,
 }
 
 
