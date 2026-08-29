@@ -3,65 +3,138 @@ import json
 from datetime import datetime
 from pathlib import Path
 
-def build_initial_checkpoint(table_name: str) -> dict:
+from fastorder.ingestion.incremental.table_config import (
+    get_table_config,
+)
+
+TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
+
+
+def build_initial_checkpoint(
+    table_name: str,
+) -> dict:
     """
     Tạo checkpoint mặc định cho lần trích xuất đầu tiên
     """
+    config = get_table_config(
+        table_name
+    )
+
+    initial_watermark = {
+        config.watermark_column:
+            "1970-01-01T00:00:00.000000"
+    }
+
+    for column, initial_value in zip(
+        config.primary_key_columns,
+        config.initial_primary_key_values,
+    ):
+        initial_watermark[column] = (
+            initial_value
+        )
+
     return {
         "version": 1,
-        "table_name": table_name, 
-        "watermark": {
-            "updated_at": "1970-01-01T00:00:00.000000",
-            "order_id": ""
-        }
+        "table_name": config.table_name,
+        "watermark": initial_watermark,
     }
 
 
-def validate_checkpoint(checkpoint: dict, expected_table_name: str) -> None:
+
+def validate_checkpoint(
+    checkpoint: dict,
+    expected_table_name: str,
+) -> None:
+
     """
     Kiểm tra checkpoint có hợp lệ hay không
     """
-    if not isinstance(checkpoint, dict):
-        raise ValueError("Checkpoint phải là một dictionary.")
+    
+    config = get_table_config(
+        expected_table_name
+    )
 
-    version = checkpoint.get("version")
-    if version != 1:
+    if not isinstance(
+        checkpoint,
+        dict,
+    ):
         raise ValueError(
-            f"Phiên bản checkpoint không được hỗ trợ: {version}. "
-            "Kỳ vọng: 1."
+            "Checkpoint phải là dictionary."
         )
 
-    if checkpoint.get("table_name") != expected_table_name:
+    if checkpoint.get("version") != 1:
         raise ValueError(
-            f"Checkpoint không hợp lệ cho bảng "
-            f"'{expected_table_name}'."
+            "Checkpoint version không được hỗ trợ. "
+            "Kỳ vọng version=1."
         )
 
-    watermark = checkpoint.get("watermark")
-    if not isinstance(watermark, dict):
-        raise ValueError("Watermark phải là một dictionary.")
+    if (
+        checkpoint.get("table_name")
+        != config.table_name
+    ):
+        raise ValueError(
+            "Checkpoint không hợp lệ cho bảng "
+            f"'{config.table_name}'."
+        )
 
-    updated_at = watermark.get("updated_at")
-    if not isinstance(updated_at, str):
-        raise ValueError("Watermark 'updated_at' phải là một chuỗi.")
+    watermark = checkpoint.get(
+        "watermark"
+    )
+
+    if not isinstance(
+        watermark,
+        dict,
+    ):
+        raise ValueError(
+            "Watermark phải là dictionary."
+        )
+
+    watermark_value = watermark.get(
+        config.watermark_column
+    )
+
+    if not isinstance(
+        watermark_value,
+        str,
+    ):
+        raise ValueError(
+            f"Watermark '{config.watermark_column}' "
+            "phải là chuỗi."
+        )
 
     try:
-        datetime.strptime(updated_at, "%Y-%m-%dT%H:%M:%S.%f")
-    except ValueError as e:
-        raise ValueError(
-            "Watermark 'updated_at' phải có định dạng "
-            "YYYY-MM-DDTHH:MM:SS.ffffff."
-        ) from e
-
-    order_id = watermark.get("order_id")
-    if not isinstance(order_id, str):
-        raise ValueError("Watermark 'order_id' phải là một chuỗi.")
-
-    if order_id != "" and len(order_id) != 32:
-        raise ValueError(
-            "Watermark 'order_id' phải rỗng "
-            "hoặc có đúng 32 ký tự."
+        datetime.strptime(
+            watermark_value,
+            TIMESTAMP_FORMAT,
         )
+
+    except ValueError as error:
+        raise ValueError(
+            f"Watermark '{config.watermark_column}' "
+            "phải có format "
+            "YYYY-MM-DDTHH:MM:SS.ffffff."
+        ) from error
+
+    for column, initial_value in zip(
+        config.primary_key_columns,
+        config.initial_primary_key_values,
+    ):
+
+        if column not in watermark:
+            raise ValueError(
+                f"Watermark thiếu primary key "
+                f"column '{column}'."
+            )
+
+        value = watermark[column]
+
+        if type(value) is not type(initial_value):
+            raise ValueError(
+                f"Watermark '{column}' sai kiểu dữ liệu. "
+                f"Kỳ vọng "
+                f"{type(initial_value).__name__}, "
+                f"nhận {type(value).__name__}."
+            )
 
 
 def load_checkpoint(checkpoint_path: Path, expected_table_name: str) -> dict:
