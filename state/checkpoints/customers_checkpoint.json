@@ -1,0 +1,8 @@
+{
+    "version": 1,
+    "table_name": "customers",
+    "watermark": {
+        "updated_at": "2026-08-06T09:13:56.155074",
+        "customer_id": "ffffe8b65bbe3087b653a978c870db99"
+    }
+}
