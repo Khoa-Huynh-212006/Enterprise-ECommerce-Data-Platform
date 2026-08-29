@@ -224,6 +224,92 @@ GEOLOCATION_CONFIG = IncrementalTableConfig(
     ),
 )
 
+ORDER_ITEMS_CONFIG = IncrementalTableConfig(
+    table_name="order_items",
+
+    primary_key_columns=(
+        "order_id",
+        "order_item_id",
+    ),
+
+    initial_primary_key_values=(
+        "",
+        0,
+    ),
+
+    watermark_column="updated_at",
+
+    select_columns=(
+        "order_id",
+        "order_item_id",
+        "product_id",
+        "seller_id",
+        "shipping_limit_date",
+        "price",
+        "freight_value",
+        "warehouse_id",
+        "quantity",
+        "created_at",
+        "updated_at",
+    ),
+)
+
+
+ORDER_PAYMENTS_CONFIG = IncrementalTableConfig(
+    table_name="order_payments",
+
+    primary_key_columns=(
+        "order_id",
+        "payment_sequential",
+    ),
+
+    initial_primary_key_values=(
+        "",
+        0,
+    ),
+
+    watermark_column="updated_at",
+
+    select_columns=(
+        "order_id",
+        "payment_sequential",
+        "payment_type",
+        "payment_installments",
+        "payment_value",
+        "created_at",
+        "updated_at",
+    ),
+)
+
+
+ORDER_REVIEWS_CONFIG = IncrementalTableConfig(
+    table_name="order_reviews",
+
+    primary_key_columns=(
+        "review_id",
+        "order_id",
+    ),
+
+    initial_primary_key_values=(
+        "",
+        "",
+    ),
+
+    watermark_column="updated_at",
+
+    select_columns=(
+        "review_id",
+        "order_id",
+        "review_score",
+        "review_comment_title",
+        "review_comment_message",
+        "review_creation_date",
+        "review_answer_timestamp",
+        "created_at",
+        "updated_at",
+    ),
+)
+
 TABLE_CONFIGS = {
     ORDERS_CONFIG.table_name:
         ORDERS_CONFIG,
@@ -245,6 +331,15 @@ TABLE_CONFIGS = {
 
     GEOLOCATION_CONFIG.table_name:
         GEOLOCATION_CONFIG,
+
+    ORDER_ITEMS_CONFIG.table_name:
+        ORDER_ITEMS_CONFIG,
+
+    ORDER_PAYMENTS_CONFIG.table_name:
+        ORDER_PAYMENTS_CONFIG,
+
+    ORDER_REVIEWS_CONFIG.table_name:
+        ORDER_REVIEWS_CONFIG,
 }
 
 

@@ -1,0 +1,9 @@
+{
+    "version": 1,
+    "table_name": "order_reviews",
+    "watermark": {
+        "updated_at": "2026-08-06T09:13:56.155074",
+        "review_id": "c0f1c34af3e924982d9e71b3eb34ead9",
+        "order_id": "96ad8ef0669dc53c0830b44376e975f5"
+    }
+}

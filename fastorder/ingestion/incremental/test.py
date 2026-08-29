@@ -1,13 +1,13 @@
+from datetime import datetime
+
 from fastorder.db.connection import (
     get_engine,
 )
 
 from fastorder.ingestion.incremental.table_config import (
-    WAREHOUSES_CONFIG,
-    PRODUCT_CATEGORY_TRANSLATION_CONFIG,
-    SELLERS_CONFIG,
-    PRODUCTS_CONFIG,
-    GEOLOCATION_CONFIG,
+    ORDER_ITEMS_CONFIG,
+    ORDER_PAYMENTS_CONFIG,
+    ORDER_REVIEWS_CONFIG,
 )
 
 from fastorder.ingestion.incremental.table_extractor import (
@@ -16,23 +16,24 @@ from fastorder.ingestion.incremental.table_extractor import (
 )
 
 
+TIMESTAMP_FORMAT = (
+    "%Y-%m-%dT%H:%M:%S.%f"
+)
+
 TIMESTAMP_EPOCH = (
     "1970-01-01T00:00:00.000000"
 )
 
 
 CONFIGS = (
-    WAREHOUSES_CONFIG,
-    PRODUCT_CATEGORY_TRANSLATION_CONFIG,
-    SELLERS_CONFIG,
-    PRODUCTS_CONFIG,
-    GEOLOCATION_CONFIG,
+    ORDER_ITEMS_CONFIG,
+    ORDER_PAYMENTS_CONFIG,
+    ORDER_REVIEWS_CONFIG,
 )
 
 
-def build_initial_watermark(
-    config,
-):
+def build_initial_watermark(config):
+
     watermark = {
         config.watermark_column:
             TIMESTAMP_EPOCH,
@@ -47,7 +48,26 @@ def build_initial_watermark(
     return watermark
 
 
-def get_pk(
+def watermark_key(
+    watermark,
+    config,
+):
+    return (
+        datetime.strptime(
+            watermark[
+                config.watermark_column
+            ],
+            TIMESTAMP_FORMAT,
+        ),
+        *(
+            watermark[column]
+            for column
+            in config.primary_key_columns
+        ),
+    )
+
+
+def primary_key(
     record,
     config,
 ):
@@ -75,7 +95,7 @@ with engine.connect() as conn:
             f"{config.table_name}"
         )
 
-        initial_watermark = (
+        initial = (
             build_initial_watermark(
                 config
             )
@@ -97,21 +117,13 @@ with engine.connect() as conn:
             extract_table_batch(
                 conn=conn,
                 config=config,
-                lower_watermark=
-                    initial_watermark,
+                lower_watermark=initial,
                 upper_watermark=upper,
-                batch_size=2,
+                batch_size=5,
             )
         )
 
-        assert len(batch_1) > 0
-
-        print(
-            "Batch 1:",
-            len(batch_1),
-            "Next:",
-            wm_1,
-        )
+        assert len(batch_1) == 5
 
         batch_2, wm_2 = (
             extract_table_batch(
@@ -119,34 +131,53 @@ with engine.connect() as conn:
                 config=config,
                 lower_watermark=wm_1,
                 upper_watermark=upper,
-                batch_size=2,
+                batch_size=5,
             )
         )
 
-        if batch_2:
+        assert len(batch_2) == 5
 
-            pk_1 = {
-                get_pk(row, config)
-                for row in batch_1
-            }
-
-            pk_2 = {
-                get_pk(row, config)
-                for row in batch_2
-            }
-
-            assert pk_1.isdisjoint(
-                pk_2
+        pk_1 = {
+            primary_key(
+                row,
+                config,
             )
+            for row in batch_1
+        }
 
-            assert wm_2 != wm_1
+        pk_2 = {
+            primary_key(
+                row,
+                config,
+            )
+            for row in batch_2
+        }
 
-            print(
-                "Batch 2:",
-                len(batch_2),
-                "Next:",
+        assert pk_1.isdisjoint(
+            pk_2
+        )
+
+        assert (
+            watermark_key(
+                wm_1,
+                config,
+            )
+            <
+            watermark_key(
                 wm_2,
+                config,
             )
+        )
+
+        print(
+            "Batch 1 watermark:",
+            wm_1,
+        )
+
+        print(
+            "Batch 2 watermark:",
+            wm_2,
+        )
 
         print(
             f"[PASS] "
@@ -156,6 +187,6 @@ with engine.connect() as conn:
 
 print(
     "\n"
-    "WAVE 1 GENERIC EXTRACTOR: "
+    "WAVE 2 COMPOSITE EXTRACTOR: "
     "PERFECT PASS"
 )

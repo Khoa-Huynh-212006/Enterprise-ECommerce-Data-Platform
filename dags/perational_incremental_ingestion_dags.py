@@ -281,3 +281,27 @@ incremental_geolocation_dag = (
         batch_size=5000,
     )
 )
+
+
+incremental_order_items_dag = (
+    build_incremental_table_dag(
+        table_name="order_items",
+        batch_size=5000,
+    )
+)
+
+
+incremental_order_payments_dag = (
+    build_incremental_table_dag(
+        table_name="order_payments",
+        batch_size=5000,
+    )
+)
+
+
+incremental_order_reviews_dag = (
+    build_incremental_table_dag(
+        table_name="order_reviews",
+        batch_size=5000,
+    )
+)

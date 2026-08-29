@@ -8,13 +8,13 @@
   },
   "lower_watermark": {
     "updated_at": "2026-08-06T09:13:56.155074",
-    "geolocation_id": 285000
+    "geolocation_id": 910000
   },
   "batch_upper_watermark": {
     "updated_at": "2026-08-06T09:13:56.155074",
-    "geolocation_id": 290000
+    "geolocation_id": 915000
   },
-  "extraction_id": "manual__2026-08-29T19-26-12.750106_00-00_batch_000058",
+  "extraction_id": "manual__2026-08-29T19-26-12.750106_00-00_batch_000183",
   "ingested_at": "2026-08-30T02:26:13.719779",
   "batch_size": 5000
 }
