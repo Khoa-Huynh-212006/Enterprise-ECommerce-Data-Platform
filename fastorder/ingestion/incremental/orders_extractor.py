@@ -1,138 +1,37 @@
-from sqlalchemy import Connection, text
-from typing import List, Dict, Tuple, Optional
-from datetime import datetime
+from sqlalchemy import Connection
 
-TIMESTAMP_FORMAT = "%Y-%m-%dT%H:%M:%S.%f"
+from fastorder.ingestion.incremental.table_config import (
+    ORDERS_CONFIG,
+)
 
-def _format_timestamp(dt: datetime) -> str:
-    """
-    Hàm hỗ trợ: Định dạng đối tượng datetime của PostgreSQL 
-    thành chuỗi ISO 8601 naive (không timezone) theo đúng Data Contract.
-    """
-    return dt.strftime(TIMESTAMP_FORMAT)
+from fastorder.ingestion.incremental.table_extractor import (
+    get_upper_watermark as get_table_upper_watermark,
+    extract_table_batch,
+    _format_timestamp,
+)
 
-def _parse_timestamp(value: str) -> datetime:
-    """
-    Hàm hỗ trợ: Parse ngược chuỗi Watermark thành datetime object
-    để truyền trực tiếp vào SQLAlchemy an toàn.
-    """
-    try:
-        return datetime.strptime(value, TIMESTAMP_FORMAT)
-    except ValueError as error:
-        raise ValueError(
-            f"Timestamp không hợp lệ: '{value}'. "
-            "Kỳ vọng YYYY-MM-DDTHH:MM:SS.ffffff."
-        ) from error
+def get_upper_watermark(
+    conn: Connection,
+):
+    return get_table_upper_watermark(
+        conn=conn,
+        config=ORDERS_CONFIG,
+    )
 
-def get_upper_watermark(conn: Connection) -> Optional[Dict[str, str]]:
-    """
-    Chụp lại Watermark lớn nhất (mới nhất) tại thời điểm gọi hàm.
-    Đóng băng biên chạy cho một vòng lặp Extraction.
-    """
-    query = text("""
-        SELECT updated_at, order_id
-        FROM orders
-        ORDER BY updated_at DESC, order_id DESC
-        LIMIT 1;
-    """)
-    
-    result = conn.execute(query).fetchone()
-    
-    if not result:
-        return None
-        
-    return {
-        "updated_at": _format_timestamp(result.updated_at),
-        "order_id": result.order_id
-    }
 
 def extract_orders_batch(
     conn: Connection,
-    lower_watermark: Dict[str, str],
-    upper_watermark: Dict[str, str],
-    batch_size: int = 1000
-) -> Tuple[List[Dict], Dict[str, str]]:
-    """
-    Trích xuất một batch dữ liệu nằm trong khoảng (lower_watermark, upper_watermark].
-    """
-    # 1. Validate Input Params
-    if not isinstance(batch_size, int) or isinstance(batch_size, bool):
-        raise ValueError("batch_size phải là một số nguyên.")
-    if batch_size <= 0:
-        raise ValueError("batch_size phải lớn hơn 0.")
-
-    # 2. Parse & So sánh Watermark Logic
-    lower_position = (
-        _parse_timestamp(lower_watermark["updated_at"]),
-        lower_watermark["order_id"]
+    lower_watermark,
+    upper_watermark,
+    batch_size: int = 1000,
+):
+    return extract_table_batch(
+        conn=conn,
+        config=ORDERS_CONFIG,
+        lower_watermark=lower_watermark,
+        upper_watermark=upper_watermark,
+        batch_size=batch_size,
     )
-    upper_position = (
-        _parse_timestamp(upper_watermark["updated_at"]),
-        upper_watermark["order_id"]
-    )
-
-    if lower_position > upper_position:
-        raise ValueError("Lower watermark không được lớn hơn upper watermark.")
-    if lower_position == upper_position:
-        return [], lower_watermark
-
-    # 3. Thực thi Query (Explicit Schema Contract)
-    query = text("""
-        SELECT
-            order_id,
-            customer_id,
-            warehouse_id,
-            order_status,
-            order_purchase_timestamp,
-            order_approved_at,
-            order_delivered_carrier_date,
-            order_delivered_customer_date,
-            order_estimated_delivery_date,
-            source_system,
-            created_at,
-            updated_at
-        FROM orders
-        WHERE (
-            updated_at > :lower_updated_at
-            OR (
-                updated_at = :lower_updated_at
-                AND order_id > :lower_order_id
-            )
-        )
-        AND (
-            updated_at < :upper_updated_at
-            OR (
-                updated_at = :upper_updated_at
-                AND order_id <= :upper_order_id
-            )
-        )
-        ORDER BY updated_at ASC, order_id ASC
-        LIMIT :batch_size;
-    """)
-    
-    params = {
-        "lower_updated_at": lower_position[0],
-        "lower_order_id": lower_position[1],
-        "upper_updated_at": upper_position[0],
-        "upper_order_id": upper_position[1],
-        "batch_size": batch_size
-    }
-    
-    results = conn.execute(query, params).fetchall()
-    
-    if not results:
-        return [], lower_watermark
-        
-    records = [dict(row._mapping) for row in results]
-    
-    last_record = results[-1]
-    next_lower_watermark = {
-        "updated_at": _format_timestamp(last_record.updated_at),
-        "order_id": last_record.order_id
-    }
-    
-    return records, next_lower_watermark
-
 
 if __name__ == "__main__":
     from fastorder.db.connection import get_engine
