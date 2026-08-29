@@ -93,9 +93,34 @@ ORDERS_CONFIG = IncrementalTableConfig(
     ),
 )
 
+CUSTOMERS_CONFIG = IncrementalTableConfig(
+    table_name="customers",
+
+    primary_key_columns=(
+        "customer_id",
+    ),
+
+    initial_primary_key_values=(
+        "",
+    ),
+
+    watermark_column="updated_at",
+
+    select_columns=(
+        "customer_id",
+        "customer_unique_id",
+        "customer_zip_code_prefix",
+        "customer_city",
+        "customer_state",
+        "created_at",
+        "updated_at",
+    ),
+)
+
 
 TABLE_CONFIGS = {
     ORDERS_CONFIG.table_name: ORDERS_CONFIG,
+    CUSTOMERS_CONFIG.table_name: CUSTOMERS_CONFIG,
 }
 
 
