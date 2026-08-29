@@ -117,10 +117,134 @@ CUSTOMERS_CONFIG = IncrementalTableConfig(
     ),
 )
 
+WAREHOUSES_CONFIG = IncrementalTableConfig(
+    table_name="warehouses",
+    primary_key_columns=(
+        "warehouse_id",
+    ),
+    initial_primary_key_values=(
+        "",
+    ),
+    watermark_column="updated_at",
+    select_columns=(
+        "warehouse_id",
+        "warehouse_city",
+        "warehouse_region",
+        "created_at",
+        "updated_at",
+    ),
+)
+
+
+PRODUCT_CATEGORY_TRANSLATION_CONFIG = (
+    IncrementalTableConfig(
+        table_name=(
+            "product_category_name_translation"
+        ),
+        primary_key_columns=(
+            "product_category_name",
+        ),
+        initial_primary_key_values=(
+            "",
+        ),
+        watermark_column="updated_at",
+        select_columns=(
+            "product_category_name",
+            "product_category_name_english",
+            "created_at",
+            "updated_at",
+        ),
+    )
+)
+
+
+SELLERS_CONFIG = IncrementalTableConfig(
+    table_name="sellers",
+    primary_key_columns=(
+        "seller_id",
+    ),
+    initial_primary_key_values=(
+        "",
+    ),
+    watermark_column="updated_at",
+    select_columns=(
+        "seller_id",
+        "seller_zip_code_prefix",
+        "seller_city",
+        "seller_state",
+        "created_at",
+        "updated_at",
+    ),
+)
+
+
+PRODUCTS_CONFIG = IncrementalTableConfig(
+    table_name="products",
+    primary_key_columns=(
+        "product_id",
+    ),
+    initial_primary_key_values=(
+        "",
+    ),
+    watermark_column="updated_at",
+    select_columns=(
+        "product_id",
+        "product_category_name",
+        "product_name_lenght",
+        "product_description_lenght",
+        "product_photos_qty",
+        "product_weight_g",
+        "product_length_cm",
+        "product_height_cm",
+        "product_width_cm",
+        "created_at",
+        "updated_at",
+    ),
+)
+
+
+GEOLOCATION_CONFIG = IncrementalTableConfig(
+    table_name="geolocation",
+    primary_key_columns=(
+        "geolocation_id",
+    ),
+    initial_primary_key_values=(
+        0,
+    ),
+    watermark_column="updated_at",
+    select_columns=(
+        "geolocation_id",
+        "geolocation_zip_code_prefix",
+        "geolocation_lat",
+        "geolocation_lng",
+        "geolocation_city",
+        "geolocation_state",
+        "created_at",
+        "updated_at",
+    ),
+)
 
 TABLE_CONFIGS = {
-    ORDERS_CONFIG.table_name: ORDERS_CONFIG,
-    CUSTOMERS_CONFIG.table_name: CUSTOMERS_CONFIG,
+    ORDERS_CONFIG.table_name:
+        ORDERS_CONFIG,
+
+    CUSTOMERS_CONFIG.table_name:
+        CUSTOMERS_CONFIG,
+
+    WAREHOUSES_CONFIG.table_name:
+        WAREHOUSES_CONFIG,
+
+    PRODUCT_CATEGORY_TRANSLATION_CONFIG.table_name:
+        PRODUCT_CATEGORY_TRANSLATION_CONFIG,
+
+    SELLERS_CONFIG.table_name:
+        SELLERS_CONFIG,
+
+    PRODUCTS_CONFIG.table_name:
+        PRODUCTS_CONFIG,
+
+    GEOLOCATION_CONFIG.table_name:
+        GEOLOCATION_CONFIG,
 }
 
 

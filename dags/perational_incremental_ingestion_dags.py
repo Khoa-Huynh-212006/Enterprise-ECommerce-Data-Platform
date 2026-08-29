@@ -246,3 +246,38 @@ incremental_customers_dag = (
         batch_size=5000,
     )
 )
+
+incremental_warehouses_dag = (
+    build_incremental_table_dag(
+        table_name="warehouses",
+        batch_size=5000,
+    )
+)
+
+incremental_product_category_name_translation_dag = (
+    build_incremental_table_dag(
+        table_name="product_category_name_translation",
+        batch_size=5000,
+    )
+)
+
+incremental_sellers_dag = (
+    build_incremental_table_dag(
+        table_name="sellers",
+        batch_size=5000,
+    )
+)
+
+incremental_products_dag = (
+    build_incremental_table_dag(
+        table_name="products",
+        batch_size=5000,
+    )
+)
+
+incremental_geolocation_dag = (
+    build_incremental_table_dag(
+        table_name="geolocation",
+        batch_size=5000,
+    )
+)
