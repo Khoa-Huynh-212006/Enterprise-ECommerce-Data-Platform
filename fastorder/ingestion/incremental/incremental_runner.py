@@ -3,7 +3,15 @@ from datetime import datetime
 from typing import Dict, Any, Optional
 from sqlalchemy import Connection
 
-from fastorder.ingestion.incremental.orders_extractor import extract_orders_batch
+
+from fastorder.ingestion.incremental.table_config import (
+    IncrementalTableConfig,
+    ORDERS_CONFIG,
+)
+
+from fastorder.ingestion.incremental.table_extractor import (
+    extract_table_batch,
+)
 from fastorder.ingestion.incremental.adls_bronze_writer import write_adls_bronze_batch
 from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_atomic, load_checkpoint
 from fastorder.ingestion.incremental.pending_batch_manager import (
@@ -31,29 +39,70 @@ def _extract_batch_number(extraction_id: str) -> int:
     return batch_number
 
 def process_one_orders_batch(
-        conn: Connection,
-        lower_watermark: Dict[str, str],
-        run_upper_watermark: Dict[str, str],
-        batch_size: int, 
-        checkpoint_path: Path,
-        pending_context_path: Path,
-        run_id: str,
-        extraction_id: str,
-        ingested_at: datetime,
-        extraction_upper_watermark: Optional[Dict[str, str]] = None
+    conn: Connection,
+    lower_watermark: Dict[str, Any],
+    run_upper_watermark: Dict[str, Any],
+    batch_size: int,
+    checkpoint_path: Path,
+    pending_context_path: Path,
+    run_id: str,
+    extraction_id: str,
+    ingested_at: datetime,
+    extraction_upper_watermark: Optional[
+        Dict[str, Any]
+    ] = None,
+) -> Dict[str, Any]:
+
+    return process_one_table_batch(
+        conn=conn,
+        config=ORDERS_CONFIG,
+        lower_watermark=lower_watermark,
+        run_upper_watermark=
+            run_upper_watermark,
+        batch_size=batch_size,
+        checkpoint_path=checkpoint_path,
+        pending_context_path=
+            pending_context_path,
+        run_id=run_id,
+        extraction_id=extraction_id,
+        ingested_at=ingested_at,
+        extraction_upper_watermark=
+            extraction_upper_watermark,
+    )
+
+
+
+def process_one_table_batch(
+    conn: Connection,
+    config: IncrementalTableConfig,
+    lower_watermark: Dict[str, Any],
+    run_upper_watermark: Dict[str, Any],
+    batch_size: int,
+    checkpoint_path: Path,
+    pending_context_path: Path,
+    run_id: str,
+    extraction_id: str,
+    ingested_at: datetime,
+    extraction_upper_watermark: Optional[
+        Dict[str, Any]
+    ] = None,
 ) -> Dict[str, Any]:
 
     effective_extraction_upper = (
-        extraction_upper_watermark 
-        if extraction_upper_watermark is not None 
+        extraction_upper_watermark
+        if extraction_upper_watermark is not None
         else run_upper_watermark
     )
-    
-    batch_records, next_watermark = extract_orders_batch(
-        lower_watermark=lower_watermark,
-        upper_watermark=effective_extraction_upper,
-        batch_size=batch_size,
-        conn=conn
+
+    batch_records, next_watermark = (
+        extract_table_batch(
+            conn=conn,
+            config=config,
+            lower_watermark=lower_watermark,
+            upper_watermark=
+                effective_extraction_upper,
+            batch_size=batch_size,
+        )
     )
 
     if not batch_records:
@@ -61,56 +110,71 @@ def process_one_orders_batch(
             "status": "completed",
             "records_written": 0,
             "checkpoint_updated": False,
-            "pending_context_deleted": False
+            "pending_context_deleted": False,
         }
 
-    pending_context = build_pending_batch_context(
-        table_name="orders",
-        run_id=run_id,
-        run_upper_watermark=run_upper_watermark,
-        lower_watermark=lower_watermark,
-        batch_upper_watermark=next_watermark,
-        extraction_id=extraction_id,
-        ingested_at=ingested_at.strftime("%Y-%m-%dT%H:%M:%S.%f"),
-        batch_size=batch_size
+    pending_context = (
+        build_pending_batch_context(
+            table_name=config.table_name,
+            run_id=run_id,
+            run_upper_watermark=
+                run_upper_watermark,
+            lower_watermark=
+                lower_watermark,
+            batch_upper_watermark=
+                next_watermark,
+            extraction_id=extraction_id,
+            ingested_at=ingested_at.strftime(
+                "%Y-%m-%dT%H:%M:%S.%f"
+            ),
+            batch_size=batch_size,
+        )
     )
-    
+
     save_pending_batch_context_atomic(
         file_path=pending_context_path,
         context=pending_context,
-        expected_table_name="orders"
+        expected_table_name=
+            config.table_name,
     )
 
     output_path = write_adls_bronze_batch(
         records=batch_records,
-        table_name="orders",
+        table_name=config.table_name,
         extraction_id=extraction_id,
-        ingested_at=ingested_at
+        ingested_at=ingested_at,
     )
 
     new_checkpoint = {
         "version": 1,
-        "table_name": "orders",
-        "watermark": next_watermark
+        "table_name": config.table_name,
+        "watermark": next_watermark,
     }
 
     save_checkpoint_atomic(
-        checkpoint_path=checkpoint_path, 
+        checkpoint_path=checkpoint_path,
         checkpoint=new_checkpoint,
-        expected_table_name="orders"
+        expected_table_name=
+            config.table_name,
     )
-    
-    delete_pending_batch_context(pending_context_path)
+
+    delete_pending_batch_context(
+        pending_context_path
+    )
 
     return {
         "status": "batch_committed",
-        "records_written": len(batch_records),
-        "output_path": output_path,
-        "next_watermark": next_watermark,
-        "checkpoint_updated": True,
-        "pending_context_deleted": True
+        "records_written":
+            len(batch_records),
+        "output_path":
+            output_path,
+        "next_watermark":
+            next_watermark,
+        "checkpoint_updated":
+            True,
+        "pending_context_deleted":
+            True,
     }
-
 
 def run_orders_incremental_ingestion(
     conn: Connection,
