@@ -1,288 +1,140 @@
+from datetime import datetime
+from fastorder.ingestion.incremental.adls_bronze_writer import (
+    _build_arrow_table,
+)
+
+import pyarrow as pa
+import pyarrow.parquet as pq
 import io
-import json
-from pathlib import Path
 
-import pandas as pd
+test_records = [
+    {
+        "order_id": "O001",
+        "customer_id": "C001",
 
-from fastorder.storage.adls_client import (
-    get_bronze_file_system_client,
-)
+        # Cố tình NULL để test
+        # schema không bị suy luận thành null type.
+        "warehouse_id": None,
 
+        "order_status": "delivered",
 
-CHECKPOINT_PATH = Path(
-    "/opt/airflow/state/checkpoints/"
-    "orders_checkpoint.json"
-)
-
-
-def main():
-
-    print(
-        "=" * 80
-    )
-    print(
-        "ORDERS BRONZE DIAGNOSTIC"
-    )
-    print(
-        "=" * 80
-    )
-
-    # -------------------------------------------------
-    # 1. Checkpoint
-    # -------------------------------------------------
-
-    print(
-        "\n[1] CURRENT CHECKPOINT"
-    )
-
-    if CHECKPOINT_PATH.exists():
-
-        checkpoint = json.loads(
-            CHECKPOINT_PATH.read_text()
-        )
-
-        print(
-            json.dumps(
-                checkpoint,
-                indent=4,
-                ensure_ascii=False,
-            )
-        )
-
-    else:
-
-        print(
-            "Checkpoint không tồn tại."
-        )
-
-    # -------------------------------------------------
-    # 2. Bronze files
-    # -------------------------------------------------
-
-    fs_client = (
-        get_bronze_file_system_client()
-    )
-
-    paths = [
-        path.name
-        for path in fs_client.get_paths(
-            path="orders",
-            recursive=True,
-        )
-        if (
-            not path.is_directory
-            and path.name.endswith(
-                "/part-000.parquet"
-            )
-        )
-    ]
-
-    print(
-        "\n[2] BRONZE FILES"
-    )
-
-    print(
-        f"Total parquet files: "
-        f"{len(paths)}"
-    )
-
-    summary = []
-
-    all_order_ids = set()
-
-    production_order_ids = set()
-
-    test_order_ids = set()
-
-    for path in sorted(paths):
-
-        parts = path.split("/")
-
-        extraction_part = next(
-            (
-                part
-                for part in parts
-                if part.startswith(
-                    "extraction_id="
-                )
+        "order_purchase_timestamp":
+            datetime(
+                2026,
+                8,
+                30,
+                10,
+                0,
+                0,
+                123456,
             ),
-            None,
-        )
 
-        if extraction_part is None:
+        "order_approved_at": None,
+        "order_delivered_carrier_date": None,
+        "order_delivered_customer_date": None,
+        "order_estimated_delivery_date": None,
 
-            extraction_id = (
-                "<UNKNOWN>"
-            )
+        "source_system": "olist_seed",
 
-        else:
+        "created_at":
+            datetime(
+                2026,
+                8,
+                30,
+                10,
+                0,
+                0,
+                123456,
+            ),
 
-            extraction_id = (
-                extraction_part.split(
-                    "=",
-                    1,
-                )[1]
-            )
+        "updated_at":
+            datetime(
+                2026,
+                8,
+                30,
+                10,
+                0,
+                0,
+                123456,
+            ),
+    },
+]
 
-        is_test = (
-            extraction_id.startswith(
-                "test_"
-            )
-        )
+table = _build_arrow_table(
+    records=test_records,
+    table_name="orders",
+    extraction_id="test_schema",
+    ingested_at=datetime(
+        2026,
+        8,
+        30,
+        12,
+        0,
+        0,
+        123456,
+    ),
+)
 
-        raw = (
-            fs_client
-            .get_file_client(path)
-            .download_file()
-            .readall()
-        )
+buffer = io.BytesIO()
 
-        df = pd.read_parquet(
-            io.BytesIO(raw)
-        )
+pq.write_table(
+    table,
+    buffer,
+)
 
-        order_ids = set(
-            df["order_id"]
-            .astype(str)
-            .tolist()
-        )
+buffer.seek(0)
 
-        all_order_ids.update(
-            order_ids
-        )
+parquet_file = pq.ParquetFile(
+    buffer
+)
 
-        if is_test:
+parquet_schema = (
+    parquet_file.schema_arrow
+)
 
-            test_order_ids.update(
-                order_ids
-            )
+print(
+    "\n=== PARQUET ARROW SCHEMA ==="
+)
 
-        else:
+print(
+    parquet_schema
+)
 
-            production_order_ids.update(
-                order_ids
-            )
+print(
+    "\n=== PARQUET PHYSICAL SCHEMA ==="
+)
 
-        if len(df) > 0:
+print(
+    parquet_file.schema
+)
+assert (
+    parquet_schema.field(
+        "warehouse_id"
+    ).type
+    == pa.string()
+)
 
-            min_updated_at = (
-                pd.to_datetime(
-                    df["updated_at"]
-                ).min()
-            )
+assert (
+    parquet_schema.field(
+        "updated_at"
+    ).type
+    == pa.timestamp("us")
+)
 
-            max_updated_at = (
-                pd.to_datetime(
-                    df["updated_at"]
-                ).max()
-            )
+assert (
+    parquet_schema.field(
+        "_ingested_at"
+    ).type
+    == pa.timestamp("us")
+)
 
-        else:
+assert (
+    parquet_schema.field(
+        "_source_updated_at"
+    ).type
+    == pa.timestamp("us")
+)
 
-            min_updated_at = None
-            max_updated_at = None
-
-        summary.append(
-            {
-                "extraction_id":
-                    extraction_id,
-
-                "is_test":
-                    is_test,
-
-                "rows":
-                    len(df),
-
-                "distinct_orders":
-                    len(order_ids),
-
-                "min_updated_at":
-                    min_updated_at,
-
-                "max_updated_at":
-                    max_updated_at,
-
-                "path":
-                    path,
-            }
-        )
-
-    # -------------------------------------------------
-    # 3. Per-file result
-    # -------------------------------------------------
-
-    print(
-        "\n[3] PER FILE"
-    )
-
-    for item in summary:
-
-        print(
-            "\n"
-            f"Extraction : "
-            f"{item['extraction_id']}\n"
-
-            f"Test       : "
-            f"{item['is_test']}\n"
-
-            f"Rows       : "
-            f"{item['rows']}\n"
-
-            f"Orders     : "
-            f"{item['distinct_orders']}\n"
-
-            f"Min updated: "
-            f"{item['min_updated_at']}\n"
-
-            f"Max updated: "
-            f"{item['max_updated_at']}\n"
-
-            f"Path       : "
-            f"{item['path']}"
-        )
-
-    # -------------------------------------------------
-    # 4. Overall summary
-    # -------------------------------------------------
-
-    print(
-        "\n"
-        + "=" * 80
-    )
-
-    print(
-        "SUMMARY"
-    )
-
-    print(
-        "=" * 80
-    )
-
-    print(
-        f"All Bronze distinct orders : "
-        f"{len(all_order_ids)}"
-    )
-
-    print(
-        f"Production distinct orders : "
-        f"{len(production_order_ids)}"
-    )
-
-    print(
-        f"Test distinct orders       : "
-        f"{len(test_order_ids)}"
-    )
-
-    print(
-        f"Production parquet files   : "
-        f"{sum(not x['is_test'] for x in summary)}"
-    )
-
-    print(
-        f"Test parquet files         : "
-        f"{sum(x['is_test'] for x in summary)}"
-    )
-
-
-if __name__ == "__main__":
-    main()
+print(
+    "\nPARQUET SERIALIZATION: PASS"
+)

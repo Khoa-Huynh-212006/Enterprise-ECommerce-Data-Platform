@@ -1,10 +1,166 @@
 import io
-import pandas as pd
 from datetime import datetime
 from azure.storage.filedatalake import FileSystemClient, DataLakeFileClient
 
 from fastorder.storage.adls_client import get_bronze_file_system_client
 
+import pyarrow as pa
+import pyarrow.parquet as pq
+from fastorder.ingestion.incremental.table_config import (
+    get_table_config,
+)
+
+def _to_arrow_type(
+    configured_type: str,
+) -> pa.DataType:
+
+    type_mapping = {
+        "string":
+            pa.string(),
+
+        "int32":
+            pa.int32(),
+
+        "int64":
+            pa.int64(),
+
+        "decimal_10_2":
+            pa.decimal128(
+                10,
+                2,
+            ),
+
+        "decimal_10_6":
+            pa.decimal128(
+                10,
+                6,
+            ),
+
+        "timestamp_us":
+            pa.timestamp(
+                "us"
+            ),
+    }
+
+    try:
+        return type_mapping[
+            configured_type
+        ]
+
+    except KeyError as error:
+        raise ValueError(
+            "Không hỗ trợ kiểu dữ liệu "
+            f"'{configured_type}'."
+        ) from error
+
+def _build_arrow_schema(
+    table_name: str,
+) -> pa.Schema:
+
+    config = get_table_config(
+        table_name
+    )
+
+    fields = []
+
+    for column in (
+        config.select_columns
+    ):
+
+        configured_type = (
+            config.column_types[
+                column
+            ]
+        )
+
+        fields.append(
+            pa.field(
+                column,
+                _to_arrow_type(
+                    configured_type
+                ),
+                nullable=True,
+            )
+        )
+
+    fields.extend(
+        [
+            pa.field(
+                "_ingestion_id",
+                pa.string(),
+                nullable=False,
+            ),
+
+            pa.field(
+                "_ingested_at",
+                pa.timestamp("us"),
+                nullable=False,
+            ),
+
+            pa.field(
+                "_source_table",
+                pa.string(),
+                nullable=False,
+            ),
+
+            pa.field(
+                "_source_updated_at",
+                pa.timestamp("us"),
+                nullable=False,
+            ),
+
+            pa.field(
+                "_ingestion_method",
+                pa.string(),
+                nullable=False,
+            ),
+        ]
+    )
+
+    return pa.schema(fields)
+
+def _build_arrow_table(
+    records: list[dict],
+    table_name: str,
+    extraction_id: str,
+    ingested_at: datetime,
+) -> pa.Table:
+
+    schema = _build_arrow_schema(
+        table_name
+    )
+
+    enriched_records = []
+
+    for record in records:
+
+        enriched_record = {
+            **record,
+
+            "_ingestion_id":
+                extraction_id,
+
+            "_ingested_at":
+                ingested_at,
+
+            "_source_table":
+                table_name,
+
+            "_source_updated_at":
+                record["updated_at"],
+
+            "_ingestion_method":
+                "timestamp_incremental",
+        }
+
+        enriched_records.append(
+            enriched_record
+        )
+
+    return pa.Table.from_pylist(
+        enriched_records,
+        schema=schema,
+    )  
 
 def write_adls_bronze_batch(
     records: list[dict],
@@ -21,22 +177,33 @@ def write_adls_bronze_batch(
     if not isinstance(ingested_at, datetime):
         raise ValueError("Loi nghiep vu: Tham so 'ingested_at' phai la mot doi tuong datetime hop le!")
 
-    df = pd.DataFrame(records)
+    if any(
+        "updated_at" not in record
+        for record in records
+    ):
+        raise ValueError(
+            "records thiếu cột 'updated_at' "
+            "bắt buộc cho incremental extraction."
+        )
 
-    if "updated_at" not in df.columns:
-        raise ValueError("Loi nghiep vu: records thieu cot 'updated_at' bat buoc cho incremental extraction.")
-
-    df["_ingestion_id"] = extraction_id
-    df["_ingested_at"] = pd.to_datetime(ingested_at)
-    df["_source_table"] = table_name
-    df["_source_updated_at"] = pd.to_datetime(df["updated_at"])
-    df["_ingestion_method"] = "timestamp_incremental"
+    arrow_table = (
+        _build_arrow_table(
+            records=records,
+            table_name=table_name,
+            extraction_id=extraction_id,
+            ingested_at=ingested_at,
+        )
+    )
 
     buffer = io.BytesIO()
-    df.to_parquet(buffer, index=False, engine="pyarrow")
-    
-    buffer.seek(0)
 
+    pq.write_table(
+        arrow_table,
+        buffer,
+    )
+
+    buffer.seek(0)
+    
     ingestion_date_str = ingested_at.strftime("%Y-%m-%d")
     remote_path = f"{table_name}/ingestion_date={ingestion_date_str}/extraction_id={extraction_id}/part-000.parquet"
 

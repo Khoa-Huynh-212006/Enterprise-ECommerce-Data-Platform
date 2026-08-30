@@ -14,6 +14,8 @@ class IncrementalTableConfig:
 
     select_columns: tuple[str, ...]
 
+    column_types: dict[str, str]
+
     def __post_init__(self) -> None:
 
         if not self.table_name:
@@ -63,6 +65,58 @@ class IncrementalTableConfig:
                 "không tồn tại trong select_columns."
             )
 
+        if not self.column_types:
+            raise ValueError(
+                "column_types không được để trống."
+            )
+
+        missing_type_columns = [
+            column
+            for column in self.select_columns
+            if column not in self.column_types
+        ]
+
+        if missing_type_columns:
+            raise ValueError(
+                "Các column chưa có kiểu dữ liệu: "
+                f"{missing_type_columns}"
+            )
+
+        extra_type_columns = [
+            column
+            for column in self.column_types
+            if column not in self.select_columns
+        ]
+
+        if extra_type_columns:
+            raise ValueError(
+                "column_types chứa column không có "
+                "trong select_columns: "
+                f"{extra_type_columns}"
+            )
+
+        allowed_types = {
+            "string",
+            "int32",
+            "int64",
+            "decimal_10_2",
+            "decimal_10_6",
+            "timestamp_us",
+        }
+
+        invalid_types = {
+            column: data_type
+            for column, data_type
+            in self.column_types.items()
+            if data_type not in allowed_types
+        }
+
+        if invalid_types:
+            raise ValueError(
+                "Phát hiện kiểu dữ liệu không hỗ trợ: "
+                f"{invalid_types}"
+            )
+
 
 ORDERS_CONFIG = IncrementalTableConfig(
     table_name="orders",
@@ -91,6 +145,36 @@ ORDERS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "order_id": "string",
+        "customer_id": "string",
+        "warehouse_id": "string",
+        "order_status": "string",
+
+        "order_purchase_timestamp":
+            "timestamp_us",
+
+        "order_approved_at":
+            "timestamp_us",
+
+        "order_delivered_carrier_date":
+            "timestamp_us",
+
+        "order_delivered_customer_date":
+            "timestamp_us",
+
+        "order_estimated_delivery_date":
+            "timestamp_us",
+
+        "source_system": "string",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 CUSTOMERS_CONFIG = IncrementalTableConfig(
@@ -115,6 +199,16 @@ CUSTOMERS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "customer_id": "string",
+        "customer_unique_id": "string",
+        "customer_zip_code_prefix": "string",
+        "customer_city": "string",
+        "customer_state": "string",
+        "created_at": "timestamp_us",
+        "updated_at": "timestamp_us",
+    },
 )
 
 WAREHOUSES_CONFIG = IncrementalTableConfig(
@@ -133,6 +227,14 @@ WAREHOUSES_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "warehouse_id": "string",
+        "warehouse_city": "string",
+        "warehouse_region": "string",
+        "created_at": "timestamp_us",
+        "updated_at": "timestamp_us",
+    },
 )
 
 
@@ -154,6 +256,14 @@ PRODUCT_CATEGORY_TRANSLATION_CONFIG = (
             "created_at",
             "updated_at",
         ),
+
+        column_types={
+            "product_category_name": "string",
+            "product_category_name_english":
+                "string",
+            "created_at": "timestamp_us",
+            "updated_at": "timestamp_us",
+        },
     )
 )
 
@@ -175,6 +285,15 @@ SELLERS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "seller_id": "string",
+        "seller_zip_code_prefix": "string",
+        "seller_city": "string",
+        "seller_state": "string",
+        "created_at": "timestamp_us",
+        "updated_at": "timestamp_us",
+    },
 )
 
 
@@ -200,6 +319,40 @@ PRODUCTS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "product_id": "string",
+
+        "product_category_name":
+            "string",
+
+        "product_name_lenght":
+            "int32",
+
+        "product_description_lenght":
+            "int32",
+
+        "product_photos_qty":
+            "int32",
+
+        "product_weight_g":
+            "decimal_10_2",
+
+        "product_length_cm":
+            "decimal_10_2",
+
+        "product_height_cm":
+            "decimal_10_2",
+
+        "product_width_cm":
+            "decimal_10_2",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 
@@ -222,6 +375,32 @@ GEOLOCATION_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "geolocation_id":
+            "int64",
+
+        "geolocation_zip_code_prefix":
+            "string",
+
+        "geolocation_lat":
+            "decimal_10_6",
+
+        "geolocation_lng":
+            "decimal_10_6",
+
+        "geolocation_city":
+            "string",
+
+        "geolocation_state":
+            "string",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 ORDER_ITEMS_CONFIG = IncrementalTableConfig(
@@ -252,6 +431,34 @@ ORDER_ITEMS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "order_id": "string",
+        "order_item_id": "int32",
+        "product_id": "string",
+        "seller_id": "string",
+
+        "shipping_limit_date":
+            "timestamp_us",
+
+        "price":
+            "decimal_10_2",
+
+        "freight_value":
+            "decimal_10_2",
+
+        "warehouse_id":
+            "string",
+
+        "quantity":
+            "int32",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 
@@ -279,6 +486,28 @@ ORDER_PAYMENTS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "order_id": "string",
+
+        "payment_sequential":
+            "int32",
+
+        "payment_type":
+            "string",
+
+        "payment_installments":
+            "int32",
+
+        "payment_value":
+            "decimal_10_2",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 
@@ -308,6 +537,32 @@ ORDER_REVIEWS_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "review_id": "string",
+        "order_id": "string",
+
+        "review_score":
+            "int32",
+
+        "review_comment_title":
+            "string",
+
+        "review_comment_message":
+            "string",
+
+        "review_creation_date":
+            "timestamp_us",
+
+        "review_answer_timestamp":
+            "timestamp_us",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 INVENTORY_CONFIG = IncrementalTableConfig(
@@ -332,6 +587,20 @@ INVENTORY_CONFIG = IncrementalTableConfig(
         "created_at",
         "updated_at",
     ),
+
+    column_types={
+        "warehouse_id": "string",
+        "product_id": "string",
+
+        "quantity_available":
+            "int32",
+
+        "created_at":
+            "timestamp_us",
+
+        "updated_at":
+            "timestamp_us",
+    },
 )
 
 TABLE_CONFIGS = {
@@ -385,19 +654,24 @@ def get_table_config(
 
 if __name__ == "__main__":
 
-    print("Testing ORDERS_CONFIG...")
-
-    assert ORDERS_CONFIG.table_name == "orders"
-
-    assert ORDERS_CONFIG.primary_key_columns == (
-        "order_id",
+    print(
+        "Testing incremental table configs..."
     )
 
-    assert ORDERS_CONFIG.watermark_column == (
-        "updated_at"
+    for table_name, config in (
+        TABLE_CONFIGS.items()
+    ):
+
+        assert set(
+            config.select_columns
+        ) == set(
+            config.column_types
+        )
+
+        print(
+            f"[PASS] {table_name}"
+        )
+
+    print(
+        "\nALL TABLE CONFIGS: PASS"
     )
-
-    assert "order_id" in ORDERS_CONFIG.select_columns
-    assert "updated_at" in ORDERS_CONFIG.select_columns
-
-    print("ORDERS_CONFIG: PASS")
