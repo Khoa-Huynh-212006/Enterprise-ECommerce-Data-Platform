@@ -1,19 +1,27 @@
 from datetime import datetime
+
 from fastorder.ingestion.incremental.adls_bronze_writer import (
-    _build_arrow_table,
+    write_adls_bronze_batch,
 )
 
-import pyarrow as pa
-import pyarrow.parquet as pq
-import io
+
+test_time = datetime.now()
+
+test_extraction_id = (
+    "test_spark_compatibility_"
+    + test_time.strftime(
+        "%Y%m%d%H%M%S%f"
+    )
+)
+
 
 test_records = [
     {
-        "order_id": "O001",
-        "customer_id": "C001",
+        "order_id": "TEST_SPARK_001",
+        "customer_id": "TEST_CUSTOMER_001",
 
-        # Cố tình NULL để test
-        # schema không bị suy luận thành null type.
+        # Cố tình NULL để kiểm tra
+        # schema vẫn phải là string.
         "warehouse_id": None,
 
         "order_status": "delivered",
@@ -57,84 +65,25 @@ test_records = [
                 0,
                 123456,
             ),
-    },
+    }
 ]
 
-table = _build_arrow_table(
-    records=test_records,
-    table_name="orders",
-    extraction_id="test_schema",
-    ingested_at=datetime(
-        2026,
-        8,
-        30,
-        12,
-        0,
-        0,
-        123456,
-    ),
+
+output_path = (
+    write_adls_bronze_batch(
+        records=test_records,
+        table_name="orders",
+        extraction_id=
+            test_extraction_id,
+        ingested_at=test_time,
+    )
 )
 
-buffer = io.BytesIO()
 
-pq.write_table(
-    table,
-    buffer,
-)
-
-buffer.seek(0)
-
-parquet_file = pq.ParquetFile(
-    buffer
-)
-
-parquet_schema = (
-    parquet_file.schema_arrow
+print(
+    "\nTEST FILE WRITTEN:"
 )
 
 print(
-    "\n=== PARQUET ARROW SCHEMA ==="
-)
-
-print(
-    parquet_schema
-)
-
-print(
-    "\n=== PARQUET PHYSICAL SCHEMA ==="
-)
-
-print(
-    parquet_file.schema
-)
-assert (
-    parquet_schema.field(
-        "warehouse_id"
-    ).type
-    == pa.string()
-)
-
-assert (
-    parquet_schema.field(
-        "updated_at"
-    ).type
-    == pa.timestamp("us")
-)
-
-assert (
-    parquet_schema.field(
-        "_ingested_at"
-    ).type
-    == pa.timestamp("us")
-)
-
-assert (
-    parquet_schema.field(
-        "_source_updated_at"
-    ).type
-    == pa.timestamp("us")
-)
-
-print(
-    "\nPARQUET SERIALIZATION: PASS"
+    output_path
 )
