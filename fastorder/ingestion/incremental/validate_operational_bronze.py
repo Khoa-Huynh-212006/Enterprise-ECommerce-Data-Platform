@@ -8,8 +8,8 @@ from fastorder.db.connection import (
     get_engine,
 )
 
-from fastorder.storage.adls_client import (
-    get_bronze_file_system_client,
+from fastorder.storage.minio_client import (
+    get_minio_client,
 )
 
 from fastorder.ingestion.incremental.table_config import (
@@ -48,6 +48,7 @@ METADATA_COLUMNS = (
     "_ingestion_method",
 )
 
+BRONZE_BUCKET = "bronze"
 
 CHECKPOINT_ROOT = Path(
     "/opt/airflow/state/checkpoints"
@@ -144,7 +145,7 @@ def validate_bronze_path(
 
 def validate_table(
     conn,
-    fs_client,
+    minio_client,
     table_name,
 ):
 
@@ -211,19 +212,53 @@ def validate_table(
     )
 
 
-    bronze_paths = [
-        path.name
-        for path in fs_client.get_paths(
-            path=table_name,
-            recursive=True,
-        )
-        if (
-            not path.is_directory
-            and path.name.endswith(
-                "/part-000.parquet"
+    bronze_paths = []
+
+    continuation_token = None
+
+    while True:
+
+        request = {
+            "Bucket": BRONZE_BUCKET,
+            "Prefix": f"{table_name}/",
+        }
+
+        if continuation_token:
+            request["ContinuationToken"] = (
+                continuation_token
+            )
+
+        response = (
+            minio_client.list_objects_v2(
+                **request
             )
         )
-    ]
+
+        for item in response.get(
+            "Contents",
+            [],
+        ):
+
+            object_key = item["Key"]
+
+            if object_key.endswith(
+                "/part-000.parquet"
+            ):
+                bronze_paths.append(
+                    object_key
+                )
+
+        if not response.get(
+            "IsTruncated",
+            False,
+        ):
+            break
+
+        continuation_token = (
+            response[
+                "NextContinuationToken"
+            ]
+        )
 
     assert bronze_paths, (
         f"{table_name}: "
@@ -263,17 +298,19 @@ def validate_table(
 
         production_files += 1
 
-        file_client = (
-            fs_client.get_file_client(
-                path
+
+        response = (
+            minio_client.get_object(
+                Bucket=BRONZE_BUCKET,
+                Key=path,
             )
         )
 
         raw = (
-            file_client
-            .download_file()
-            .readall()
+            response["Body"].read()
         )
+
+        
 
         assert len(raw) > 0, (
             f"{table_name}: "
@@ -482,8 +519,8 @@ def main():
 
     engine = get_engine()
 
-    fs_client = (
-        get_bronze_file_system_client()
+    minio_client = (
+        get_minio_client()
     )
 
     results = []
@@ -507,7 +544,7 @@ def main():
 
                 result = validate_table(
                     conn=conn,
-                    fs_client=fs_client,
+                    minio_client=minio_client,
                     table_name=table_name,
                 )
 
