@@ -394,6 +394,42 @@ services:
 
     restart: always
 
+  # Initialize FastOrder data-lake buckets
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+
+    depends_on:
+      - minio
+
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+    entrypoint: /bin/sh
+
+    command:
+      - -c
+      - |
+        echo "Waiting for MinIO..."
+
+        until mc alias set fastorder http://minio:9000 \
+          "$${MINIO_ROOT_USER}" \
+          "$${MINIO_ROOT_PASSWORD}"
+        do
+          sleep 2
+        done
+
+        echo "Creating FastOrder data-lake buckets..."
+
+        mc mb --ignore-existing fastorder/landing
+        mc mb --ignore-existing fastorder/bronze
+        mc mb --ignore-existing fastorder/silver
+        mc mb --ignore-existing fastorder/gold
+
+        echo "FastOrder MinIO initialization complete."
+
+        mc ls fastorder
+
 volumes:
   postgres-db-volume:
   fastorder-db-volume:
