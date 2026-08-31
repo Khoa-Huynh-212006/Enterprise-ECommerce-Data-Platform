@@ -2,12 +2,13 @@
 
 Current phase:
 
-**Operational PostgreSQL Ingestion Framework**
+**Local-First Architecture Migration**
 
-### Operational PostgreSQL Status
+### Platform Status
+- Azure Data Lake Storage → MinIO ✅
+- Azure Storage Client → boto3 ✅
 
-Operational PostgreSQL → Bronze ✅ COMPLETE
-
-### Next Phase
-
-Operational Silver ← NEXT
+### Operational PostgreSQL (MinIO) Status
+- Generic framework migration ✅
+- Orders migration certified ✅
+- Migrate remaining tables ⏳

@@ -903,3 +903,17 @@ Hoàn thành toàn bộ luồng Ingestion từ Operational PostgreSQL lên lớp
 - Thực hiện Orders controlled re-bootstrap sau khi phát hiện legacy test artifacts.
 
 **Milestone status: COMPLETE**
+
+
+## Mốc 33 — Local-First Stack Migration Started & Orders Certified
+
+Khởi chạy chiến dịch chuyển đổi kiến trúc từ Azure sang Local-First Stack (MinIO, Spark, ClickHouse) do giới hạn về chi phí Cloud.
+
+### Đã thực hiện
+- Tích hợp thành công MinIO làm Data Lake thay thế ADLS.
+- Chuyển đổi storage client sang `boto3`.
+- Di dời thành công luồng Operational PostgreSQL Ingestion của bảng Orders sang MinIO.
+- Cấu hình chuẩn hóa kiểu dữ liệu PyArrow Parquet (`timestamp[us]`).
+- Orders migration certified: Vượt qua toàn bộ các bài kiểm tra E2E validation (99,492 rows, 20 Parquet files, checkpoint match, no nanosecond error).
+
+**Milestone status: ORDERS MIGRATION COMPLETE**

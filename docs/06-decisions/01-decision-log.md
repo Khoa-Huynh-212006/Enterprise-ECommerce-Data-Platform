@@ -812,3 +812,51 @@ Sử dụng pattern DAG Factory để tạo tự động một DAG độc lập 
 Một vòng lặp Python sẽ đọc danh sách cấu hình bảng (bao gồm tên bảng, cursor config) và gọi hàm sinh DAG.
 Mỗi bảng được cấp một DAG ID riêng biệt.
 Luồng điều phối (orchestration logic) được tập trung tại một nơi duy nhất, đảm bảo tính DRY (Don't Repeat Yourself).
+
+## D-042 — Migrate FastOrder Development Platform from Azure to Local-First Stack
+
+### Context
+Tài khoản Azure student credits đã cạn kiệt, dẫn đến việc không thể tiếp tục sử dụng ADLS và Databricks compute. Dự án cần duy trì khả năng tái tạo (reproducible) liền mạch mà không phụ thuộc vào các tài nguyên cloud trả phí.
+
+### Decision
+Chuyển đổi toàn bộ kiến trúc phát triển sang một local-first stack hoàn toàn miễn phí (zero-cost).
+
+**Giai đoạn chuyển đổi ban đầu:**
+- Azure Data Lake Storage → MinIO.
+- Azure-specific Python storage client → boto3 S3-compatible client.
+- Giữ nguyên các logic incremental ingestion hiện tại.
+- Giữ nguyên thiết kế checkpoint và pending recovery.
+- Giữ nguyên Bronze path contract.
+
+**Giai đoạn chuyển đổi tương lai:**
+- Databricks → Local Spark / PySpark.
+- Synapse/DWH target → ClickHouse.
+- dbt Core.
+- Power BI Desktop.
+
+### Validation
+Đường dẫn di chuyển (migration path) đầu tiên được chứng nhận thành công là Operational Orders:
+`PostgreSQL → Generic Incremental Runner → PyArrow Parquet → MinIO Bronze`
+
+**Kết quả xác thực:**
+- Source rows: 99,492
+- Bronze distinct primary keys: 99,492
+- Production Parquet files: 20
+- Checkpoint khớp hoàn toàn với source upper watermark.
+- Pending context hoàn toàn sạch (clean).
+- Replay (chạy lại) không trả về dữ liệu mới (`NO_OP`).
+- Production Parquet files sử dụng `timestamp[us]`.
+- Không phát hiện lỗi `TIMESTAMP(NANOS)`.
+
+### Consequences
+
+**Tích cực:**
+- Không còn phụ thuộc vào cloud trả phí cho môi trường phát triển.
+- Tận dụng được các đặc tính của S3-compatible object storage.
+- Bảo toàn trọn vẹn ingestion framework đã cất công xây dựng.
+- Môi trường dễ dàng tái tạo (reproducible) hoàn toàn trên local.
+
+**Đánh đổi (Trade-offs):**
+- Triển khai MinIO local không hoàn toàn tương đương với managed cloud storage thực tế.
+- Trạng thái cục bộ (local state) bị buộc chặt vào môi trường development.
+- Các yếu tố HA (High Availability) và Security chuẩn production nằm ngoài phạm vi hiện tại của dự án.
