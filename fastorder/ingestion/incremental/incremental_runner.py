@@ -15,7 +15,7 @@ from fastorder.ingestion.incremental.table_extractor import (
 )
 
 
-from fastorder.ingestion.incremental.adls_bronze_writer import write_adls_bronze_batch
+from fastorder.ingestion.incremental.bronze_writer import write_bronze_batch
 from fastorder.ingestion.incremental.checkpoint_manager import save_checkpoint_atomic, load_checkpoint
 from fastorder.ingestion.incremental.pending_batch_manager import (
     build_pending_batch_context,
@@ -564,7 +564,7 @@ def process_one_table_batch(
             config.table_name,
     )
 
-    output_path = write_adls_bronze_batch(
+    output_path = write_bronze_batch(
         records=batch_records,
         table_name=config.table_name,
         extraction_id=extraction_id,
