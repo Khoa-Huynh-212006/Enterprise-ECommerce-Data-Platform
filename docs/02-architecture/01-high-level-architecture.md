@@ -1,86 +1,104 @@
 # Kiến trúc Tổng quan (High-Level Architecture)
 
 ## 1. Mục tiêu
-Tài liệu này cung cấp bức tranh toàn cảnh về các năng lực (Capabilities) của Nền tảng Dữ liệu FastOrder. Sơ đồ không đi sâu vào chi tiết công nghệ (Physical) hay luồng xử lý cụ thể (Pipeline), mà tập trung trả lời 3 câu hỏi cốt lõi:
+
+Tài liệu này mô tả **bức tranh tổng thể** của FastOrder Data Platform ở mức năng lực (capability), không phụ thuộc vào một công nghệ cụ thể. Các lựa chọn công nghệ hiện tại được mô tả tại `03-physical-architecture.md`.
+
+FastOrder cần trả lời ba câu hỏi:
+
 1. Dữ liệu đến từ đâu?
-2. Nền tảng có những phân lớp chức năng nào để xử lý dữ liệu đó?
-3. Ai là người khai thác giá trị cuối cùng?
+2. Dữ liệu đi qua những lớp chức năng nào trước khi sẵn sàng cho phân tích?
+3. Ai sử dụng dữ liệu và sử dụng để làm gì?
 
 ---
 
-## 2. Sơ đồ Kiến trúc (Enterprise Overview)
-
-Sơ đồ dưới đây mô tả kiến trúc theo hướng phân lớp (Layered Architecture). Toàn bộ hệ thống Nền tảng dữ liệu được đặt dưới sự kiểm soát của một lớp Điều phối & Giám sát (Workflow Orchestration & Monitoring).
+## 2. Enterprise Overview
 
 ```text
-================================================================================
-                    WORKFLOW ORCHESTRATION & MONITORING
-                    (Điều phối, lên lịch và giám sát toàn hệ thống)
-================================================================================
-                                      |
-                                      | Quản lý vòng đời
-                                      V
-+-----------------------+      +-----------------------------------------------+
-|                       |      |  NỀN TẢNG DỮ LIỆU (DATA PLATFORM)             |
-|  NGUỒN DỮ LIỆU        |      |                                               |
-|  (Source Systems)     |      |  +-----------------------------------------+  |
-|                       |      |  | [A] Data Ingestion Layer                |  |
-|  - Operational DB     |======|=>|     (Cổng thu thập & Trung chuyển)      |  |
-|  - External APIs      | Trích|  +-----------------------------------------+  |
-|  - File-based Systems | xuất |                       |                       |
-|                       |      |                       V                       |
-+-----------------------+      |  +-----------------------------------------+  |
-                               |  | [B] Data Lake Layer                     |  |
-                               |  |     (Lưu trữ thô - Bronze / Silver)     |  |
-                               |  +-----------------------------------------+  |
-                               |                       |                       |
-                               |                       V                       |
-                               |  +-----------------------------------------+  |
-                               |  | [C] Data Processing Layer               |  |
-                               |  |     (Động cơ Xử lý & Làm sạch)          |  |
-                               |  +-----------------------------------------+  |
-                               |                       |                       |
-                               |                       V                       |
-                               |  +-----------------------------------------+  |
-                               |  | [D] Data Warehouse Layer                |  |
-                               |  |     (Kho dữ liệu cốt lõi chuẩn hóa)     |  |
-                               |  +-----------------------------------------+  |
-                               |                       |                       |
-                               |                       V                       |
-                               |  +-----------------------------------------+  |
-                               |  | [E] Data Marts Layer                    |  |
-                               |  |     (Sales / Finance / Logistics)       |  |
-                               |  +-----------------------------------------+  |
-                               |                                               |
-                               +-----------------------------------------------+
-                                                      |
-                                                      | Phục vụ phân tích
-                                                      V
-                               +-----------------------------------------------+
-                               |  KHAI THÁC & ỨNG DỤNG (Data Consumption)      |
-                               |                                               |
-                               |  - Dashboards & BI Reports                    |
-                               |  - Business Users (CEO, Managers)             |
-                               +-----------------------------------------------+
+                           +----------------------------------+
+                           | ORCHESTRATION & OBSERVABILITY    |
+                           | Schedule / Retry / State / Alert |
+                           +----------------+-----------------+
+                                            |
+                                            v
++-------------------+      +----------------------------------------------+
+| SOURCE SYSTEMS    |      |              DATA PLATFORM                   |
+|                   |      |                                              |
+| Operational DB    |----->|  Ingestion  ->  Data Lake  ->  Processing   |
+| External APIs     |      |                    |              |           |
+| File-based Source |      |                    v              v           |
++-------------------+      |              Analytics Warehouse             |
+                           |                    |                          |
+                           |                    v                          |
+                           |              Business Data Marts              |
+                           +--------------------+--------------------------+
+                                                |
+                                                v
+                           +----------------------------------------------+
+                           | DATA CONSUMPTION                             |
+                           | BI / Reports / Ad-hoc Analytics              |
+                           +----------------------------------------------+
 ```
-## 3. Vai trò của các Phân lớp (Layer Capabilities)
-Thay vì nhìn Data Platform như một chiếc hộp đen, hệ thống được bóc tách thành các lớp với một trách nhiệm duy nhất (Single Responsibility):
 
-### 3.1. Nhóm Nguồn & Tiêu thụ
-Source Systems: Nơi sinh ra dữ liệu (Cơ sở dữ liệu bán hàng, API thời tiết/tỷ giá, File log hành vi).
+---
 
-Data Consumption: Nơi khai thác dữ liệu. Các phòng ban (Sales, Logistics, Finance) sử dụng BI Dashboard để đưa ra quyết định dựa trên dữ liệu đã được tinh chế.
+## 3. Các lớp chức năng
 
-### 3.2. Các phân lớp bên trong Data Platform
-Data Ingestion Layer: Chịu trách nhiệm kết nối và hút dữ liệu từ bên ngoài vào hệ thống một cách an toàn mà không làm ảnh hưởng đến nguồn.
+### 3.1. Source Systems
 
-Data Lake Layer: Nơi lưu trữ vĩnh viễn dữ liệu thô (Bronze) và dữ liệu đã làm sạch bước đầu (Silver). Đảm bảo không mất mát dữ liệu gốc và có thể chạy lại quá trình xử lý bất cứ lúc nào.
+Nguồn dữ liệu của FastOrder gồm ba nhóm:
 
-Data Processing Layer: "Động cơ" tính toán của hệ thống. Chịu trách nhiệm thực thi các logic chuyển đổi, kết hợp dữ liệu nặng nhọc nhất.
+- **Operational database:** dữ liệu giao dịch và trạng thái nghiệp vụ đang thay đổi.
+- **External APIs:** dữ liệu ngữ cảnh bên ngoài như thời tiết.
+- **File-based sources:** dữ liệu được giao theo file, ví dụ clickstream.
 
-Data Warehouse Layer: Lưu trữ dữ liệu đã được cấu trúc hóa, chuẩn hóa thành các thực thể kinh doanh cốt lõi (Khách hàng, Sản phẩm, Đơn hàng).
+### 3.2. Data Ingestion
 
-Data Marts Layer: Dữ liệu từ Warehouse được chia nhỏ và đóng gói lại theo nhu cầu cụ thể của từng phòng ban (ví dụ: Sales Mart chứa các Fact/Dim chỉ phục vụ đội Sales) để tối ưu hiệu suất truy vấn.
+Chịu trách nhiệm đưa dữ liệu từ source boundary vào Data Platform một cách có kiểm soát. Lớp này xử lý các vấn đề như incremental extraction, file discovery, API calls, retry, idempotency và ingestion metadata; không thực hiện business cleansing của Silver.
 
-### 3.3. Lớp Điều phối Trung tâm
-Workflow Orchestration & Monitoring: Không nằm trên đường ống dẫn dữ liệu, mà đóng vai trò như "Nhạc trưởng". Nó quyết định khi nào quá trình Ingestion bắt đầu, khi nào Processing chạy, và gửi cảnh báo nếu có luồng xử lý nào thất bại.
+### 3.3. Data Lake
+
+Data Lake là vùng lưu trữ bền vững cho dữ liệu trước và sau bước chuẩn hóa đầu tiên:
+
+- **Landing:** vùng tiếp nhận/prepared source dành cho file-based flow.
+- **Bronze:** dữ liệu đã được FastOrder ingestion chấp nhận, giữ fidelity với nguồn và bổ sung technical metadata.
+- **Silver:** dữ liệu đã được chuẩn hóa, kiểm tra chất lượng và sẵn sàng cho downstream analytics.
+
+### 3.4. Data Processing
+
+Thực thi transformation giữa các lớp lưu trữ: parse, chuẩn hóa schema, time normalization, reconciliation, data quality và các phép biến đổi có khối lượng lớn.
+
+### 3.5. Analytics Warehouse & Data Marts
+
+Tổ chức dữ liệu theo mô hình phục vụ OLAP và business analytics. Business logic dạng SQL, Fact/Dimension và data marts được xây dựng ở đây thay vì đẩy ngược vào Bronze.
+
+### 3.6. Data Consumption
+
+Cung cấp dữ liệu cho dashboard, báo cáo và phân tích ad-hoc của các stakeholder như CEO, Sales, Logistics, Inventory và Finance.
+
+### 3.7. Orchestration & Observability
+
+Đây là lớp điều phối xuyên suốt, không phải một data zone. Nó quản lý lịch chạy, dependency, retry, trạng thái, logging và khả năng quan sát pipeline.
+
+---
+
+## 4. Nguyên tắc kiến trúc
+
+- **Business-first:** business requirement đi trước tool selection.
+- **Thin orchestration:** DAG điều phối; logic tái sử dụng nằm trong application modules.
+- **Storage/compute separation:** nơi lưu trữ và nơi tính toán là hai trách nhiệm khác nhau.
+- **Replay-safe ingestion:** retry không được tạo thêm logical duplicate cho cùng một ingestion identity.
+- **Raw fidelity:** Bronze không âm thầm sửa business data.
+- **Fail-fast:** state hoặc data contract bất thường phải làm pipeline thất bại rõ ràng.
+- **Evidence-based certification:** Airflow task `success` không đồng nghĩa dữ liệu đã đúng; pipeline phải được reconciliation với source/control state.
+
+---
+
+## 5. Phạm vi của tài liệu
+
+Tài liệu này chỉ mô tả **kiến trúc mức cao**. Xem thêm:
+
+- `02-logical-architecture.md`: trách nhiệm từng logical zone.
+- `03-physical-architecture.md`: công nghệ hiện tại và target stack.
+- `04-data-flow-diagram.md`: luồng dữ liệu E2E theo từng source type.
+- `../07-progress/02-current-status.md`: trạng thái triển khai thực tế tại thời điểm hiện tại.

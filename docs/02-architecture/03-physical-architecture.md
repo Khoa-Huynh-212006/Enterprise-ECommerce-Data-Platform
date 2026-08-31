@@ -1,54 +1,146 @@
-# Physical Architecture (Kiến trúc Vật lý)
+# Kiến trúc Vật lý (Physical Architecture)
 
 ## 1. Mục tiêu
-Tài liệu này ánh xạ các khối chức năng từ Logical Architecture sang các công nghệ cụ thể được triển khai cho dự án FastOrder Data Platform. Trọng tâm của tài liệu là giải thích **tại sao (Rationale)** lại chọn công nghệ đó để giải quyết bài toán nghiệp vụ, thay vì các giải pháp thay thế khác.
+
+Tài liệu này ánh xạ Logical Architecture sang **stack hiện tại/target của FastOrder** sau quyết định chuyển sang môi trường local-first, zero-cost ngày 31/08/2026.
+
+Điểm quan trọng: bảng dưới đây phân biệt rõ **Implemented**, **Migration pending** và **Planned** để tài liệu không mô tả target architecture như thể đã hoàn thành.
 
 ---
 
-## 2. Ánh xạ Công nghệ (Technology Mapping)
+## 2. Technology Mapping
 
-| Khối chức năng (Logical) | Công nghệ triển khai (Physical) | Trách nhiệm chính |
-| :--- | :--- | :--- |
-| **Source Systems** | PostgreSQL, REST APIs, JSON/CSV Files | Hệ thống OLTP cốt lõi và dữ liệu ngoại vi. |
-| **Data Ingestion** | **Apache Airflow** (Python Operators) | Lên lịch và điều phối việc kéo dữ liệu từ Source. |
-| **Raw & Curated Zone** | **Azure Data Lake Storage Gen2** (ADLS Gen2) | Lưu trữ phân lớp theo Medallion (Bronze, Silver). |
-| **Data Processing** | **Apache Spark** (PySpark) | Xử lý Big Data, làm sạch và chuẩn hóa (Bronze ➔ Silver). |
-| **Analytics Storage** | **Azure Synapse Analytics** | Lưu trữ Data Warehouse (Gold Layer / Data Marts). |
-| **Modeling & Transform** | **dbt** (Data Build Tool) | Biến đổi dữ liệu có cấu trúc bằng SQL bên trong Synapse (Silver ➔ Gold). |
-| **Workflow Orchestration**| **Apache Airflow** (Dockerized) | Quản lý vòng đời toàn bộ DAGs (Ingest ➔ Spark ➔ dbt). |
+| Logical capability | Công nghệ | Trạng thái | Vai trò |
+|---|---|---|---|
+| Operational Source | PostgreSQL 16 | ✅ Implemented | FastOrder OLTP current-state |
+| External API | Open-Meteo | ✅ Source/client implemented | Weather context |
+| File Source | YOOCHOOSE | ✅ Source/preparation logic exists | Clickstream |
+| Orchestration | Apache Airflow 3.3 + CeleryExecutor | ✅ Implemented | DAG, retry, scheduling, observability |
+| Data Lake | MinIO (S3-compatible) | 🟢 In migration | Landing/Bronze/Silver object storage |
+| Object Storage Client | boto3 | ✅ Implemented | S3-compatible I/O to MinIO |
+| Bronze serialization | PyArrow + Parquet | ✅ Operational implemented | Explicit schema, `timestamp[us]` |
+| Processing | Local Apache Spark / PySpark | ⏳ Planned port | Bronze → Silver compute |
+| Table format | Delta Lake OSS | ⏳ Planned port | Transactional Silver datasets |
+| Analytics Warehouse | ClickHouse | ⏳ Planned | Column-oriented OLAP/DWH |
+| SQL modeling | dbt Core + dbt-clickhouse | ⏳ Planned | Fact/Dim, marts, tests |
+| Consumption | Power BI Desktop | ⏳ Planned | Dashboard/reporting |
 
----
+### Current certification boundary
 
-## 3. Lập luận Quyết định Kiến trúc (Architecture Decisions)
+Tại thời điểm cập nhật tài liệu:
 
-### 3.1. Tại sao Ingestion dùng Airflow mà không dùng Azure Data Factory (ADF)?
-* **Tính linh hoạt (Code-as-Configuration):** Airflow cho phép định nghĩa pipeline hoàn toàn bằng Python code, rất phù hợp để xử lý các logic ingestion phức tạp từ API (như xử lý rate limit, pagination) mà giao diện kéo thả của ADF khó tối ưu bằng.
-* **Môi trường giả lập (Local Development):** Dự án cần triển khai mượt mà trên Docker ở local. Airflow hoàn toàn mã nguồn mở và chạy tốt trên Docker, trong khi ADF là dịch vụ Cloud-native (bị khóa vào hệ sinh thái Azure) và khó test offline, đồng thời phát sinh chi phí ngay từ khâu phát triển.
+```text
+PostgreSQL OLTP
+    -> Airflow generic incremental framework
+    -> PyArrow Parquet
+    -> boto3
+    -> MinIO Bronze
+```
 
-### 3.2. Tại sao Raw Zone dùng Azure Data Lake Storage Gen2?
-* **Hierarchical Namespace:** ADLS Gen2 hỗ trợ cấu trúc thư mục thực sự (thay vì thư mục ảo như S3 hay Blob Storage thông thường). Điều này mang tính sống còn để tổ chức Data Lake theo kiến trúc Medallion (ví dụ: `bronze/orders/yyyy/mm/dd`).
-* **Hiệu suất & Tích hợp:** Chuẩn giao tiếp ABFS (Azure Blob File System) của ADLS Gen2 được tối ưu hóa đặc biệt cho Apache Spark, giúp các luồng xử lý big data đọc/ghi với tốc độ rất cao.
+đã được chứng nhận E2E cho **11/11 operational tables**.
 
-### 3.3. Tại sao Processing lại dùng Apache Spark?
-* **Khả năng mở rộng (Scalability):** Dữ liệu từ hệ thống E-commerce (50.000 đơn/ngày, cộng thêm Clickstream và Reviews) sẽ phình to rất nhanh. Spark xử lý phân tán trong bộ nhớ (In-memory), dễ dàng scan và parse hàng triệu dòng JSON/Parquet hiệu quả hơn nhiều so với việc dùng Pandas hay Python thuần.
-* **Định hình dữ liệu thô:** Spark rất mạnh trong việc áp dụng schema (Schema-on-read), loại bỏ dữ liệu hỏng (corrupted records), và lưu trữ lại dưới định dạng columnar như Parquet để tối ưu hóa cho các bước sau.
-
-### 3.4. Tại sao Warehouse lại là Azure Synapse Analytics?
-* **Chuyên trị OLAP:** Synapse sở hữu MPP (Massively Parallel Processing) engine, được sinh ra để quét các Fact tables hàng trăm triệu dòng và join với các Dimension tables trong mô hình Star Schema chỉ trong vài giây.
-* **Hệ sinh thái đồng nhất:** Nó kết nối xuyên suốt với ADLS Gen2 (để query trực tiếp dữ liệu Silver qua Serverless SQL) và tích hợp hoàn hảo với Power BI cho tầng Data Consumption.
-
-### 3.5. Tại sao dbt lại nằm sau Spark chứ không phải trước?
-Đây là sự phân tách trách nhiệm giữa **Heavy Compute** và **Business Logic**:
-* **Spark đi trước (Bronze ➔ Silver):** Đảm nhiệm các công việc "nặng nhọc" ở tầng File system: giải nén, parse JSON phức tạp, xử lý deduplication, và ép kiểu dữ liệu. Kết quả sinh ra bảng Silver sạch sẽ (dạng Parquet).
-* **dbt đi sau (Silver ➔ Gold):** Khi dữ liệu đã sạch và được nạp (hoặc expose) vào Synapse, dbt sẽ tiếp quản. Vì dbt chỉ dùng SQL, nó cực kỳ phù hợp để xây dựng Data Models (Fact/Dim), áp dụng các logic tính toán (như commission, profit margin), và thực hiện Data Quality Tests. Nếu dbt đi trước, nó sẽ không thể xử lý tốt các file JSON/CSV phi cấu trúc nằm trong Data Lake.
+YOOCHOOSE và Weather vẫn còn phần code/storage contract gắn với Azure từ giai đoạn trước và đang chờ migrate sang MinIO.
 
 ---
 
-## 4. Luồng di chuyển Dữ liệu (Data Movement)
+## 3. Target Runtime Architecture
 
-Dữ liệu di chuyển qua các thành phần theo thứ tự sau (được Airflow gọi tuần tự):
+```text
+PostgreSQL OLTP -----+
+                     |
+YOOCHOOSE files -----+----> Airflow --------------------+
+                     |                                  |
+Open-Meteo API ------+                                  v
+                                                MinIO Data Lake
+                                           landing / bronze / silver
+                                                        |
+                                                        v
+                                               Local Spark + Delta
+                                                        |
+                                                        v
+                                                   ClickHouse
+                                                        |
+                                                     dbt Core
+                                                        |
+                                                        v
+                                                Power BI Desktop
+```
 
-1. **Ingest (Extract & Load):** Airflow chạy Python Operators gọi API và kết nối DB ➔ Kéo dữ liệu thô đẩy thẳng vào `ADLS Gen2 (Bronze)`.
-2. **Process (Transform 1):** Airflow kích hoạt Spark Job (kết nối với ADLS Gen2). Spark đọc dữ liệu từ thư mục `Bronze`, làm sạch, đổi định dạng sang Parquet và ghi xuống thư mục `Silver`.
-3. **Load to DWH:** Synapse dùng PolyBase (hoặc Copy Activity) đọc dữ liệu Parquet từ thư mục `Silver` và nạp vào các Staging Tables bên trong Data Warehouse.
-4. **Modeling (Transform 2):** Airflow gọi `dbt run`. dbt thực thi các câu lệnh SQL bên trong Synapse để biến đổi Staging Tables thành các bảng Fact và Dimension (Gold Layer / Data Marts).
+### Ghi chú về bucket `gold`
+
+MinIO hiện có các bucket `landing`, `bronze`, `silver`, `gold`. Bucket `gold` được giữ như một physical namespace dự phòng, nhưng **business Gold/Data Marts target hiện tại sẽ được xây chủ yếu trong ClickHouse bằng dbt**. Không nên đồng nhất khái niệm logical Gold với một bucket cụ thể.
+
+---
+
+## 4. Lý do chọn công nghệ
+
+### 4.1. Apache Airflow
+
+- Code-first orchestration bằng Python.
+- Phù hợp với pipeline có checkpoint, pending context, API retry và file manifest.
+- Chạy local bằng Docker, không phụ thuộc cloud vendor.
+- DAG được giữ mỏng; reusable logic nằm trong `fastorder/`.
+
+### 4.2. MinIO + boto3
+
+- MinIO cung cấp S3-compatible object storage semantics thay cho ADLS trong môi trường local.
+- Tách storage khỏi local filesystem đơn thuần, vẫn giữ được object key/prefix, bucket và remote-I/O contract.
+- `boto3` được chọn thay vì SDK riêng của MinIO để code bám vào S3-compatible interface và giảm vendor coupling.
+- Operational Bronze giữ nguyên deterministic object key contract khi retry.
+
+### 4.3. PyArrow + Parquet
+
+Operational Bronze dùng explicit Arrow schema thay vì Pandas inference để khóa chặt kiểu dữ liệu vật lý. Đặc biệt timestamp được ghi ở precision microseconds (`timestamp[us]`) nhằm tránh lỗi Parquet `TIMESTAMP(NANOS)` khi đọc bằng Spark.
+
+### 4.4. Local Spark + Delta Lake OSS
+
+Spark vẫn là processing engine phù hợp với clickstream lớn và transformation nhiều nguồn. Delta Lake được dùng cho Silver khi cần persistent transactional table semantics, merge và processing state ổn định.
+
+Trạng thái: logic Weather Silver đã được phát triển ở giai đoạn Databricks/ADLS, nhưng runtime/path cần được port sang local Spark + MinIO.
+
+### 4.5. ClickHouse
+
+ClickHouse là target DWH vì:
+
+- column-oriented OLAP engine;
+- chạy local bằng Docker;
+- phù hợp truy vấn aggregation trên fact data lớn;
+- là server database thực sự, phù hợp hơn embedded-only engine cho portfolio enterprise-style;
+- tích hợp với dbt qua `dbt-clickhouse`.
+
+### 4.6. dbt Core
+
+Sau khi dữ liệu đã được chuẩn hóa và nạp/expose vào ClickHouse, dbt chịu trách nhiệm business SQL models, Fact/Dimension, marts và tests. Spark không nên gánh toàn bộ business modeling nếu SQL là công cụ phù hợp hơn.
+
+---
+
+## 5. MinIO Bucket Strategy
+
+```text
+landing  -> file-source boundary trước FastOrder ingestion
+bronze   -> dữ liệu ingestion đã chấp nhận
+silver   -> curated/validated datasets
+ gold    -> reserved physical namespace; không bắt buộc là nơi duy nhất chứa logical Gold
+```
+
+Operational PostgreSQL và Weather có thể đi thẳng vào Bronze; Landing chủ yếu phục vụ file-based source như YOOCHOOSE.
+
+---
+
+## 6. State Storage
+
+Trong MVP local-first, các control state nhỏ vẫn nằm trên shared Airflow volume:
+
+```text
+/opt/airflow/state/checkpoints/
+/opt/airflow/state/pending/
+/opt/airflow/state/file_based/
+```
+
+Đây là giới hạn có chủ ý của môi trường development. Không giả lập distributed metadata store nếu chưa có nhu cầu thực tế.
+
+---
+
+## 7. Legacy Azure Architecture
+
+ADLS Gen2, Azure Databricks, Azure Synapse, ADF và Managed Identity thuộc **giai đoạn lịch sử trước 31/08/2026**. Các quyết định đó vẫn được giữ trong Decision Log để bảo toàn lịch sử thiết kế, nhưng không còn là target runtime hiện tại.

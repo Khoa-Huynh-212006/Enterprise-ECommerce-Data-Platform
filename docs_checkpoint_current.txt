@@ -1,16 +1,202 @@
-# Technical Decision Log
 
-> **Last consolidated:** 31/08/2026  
-> Tài liệu này là decision history của project. Các quyết định Azure/Databricks cũ được **giữ lại như historical context** thay vì xóa, nhưng trạng thái `Superseded` phải được đọc trước khi dùng làm current architecture. Decision IDs bị trùng trong bản cũ đã được sửa: DAG Factory là D-042 và Local-First migration là D-043.
 
-## Cách đọc
+====================================================================================================
+FILE: ..\docs\02-architecture\01-high-level-architecture.md
+====================================================================================================
+# Kiến trúc Tổng quan (High-Level Architecture)
 
-- **Active:** đang là contract hiện hành.
-- **Target:** đã chốt hướng nhưng chưa triển khai.
-- **Historical:** quyết định đúng ở thời điểm trước nhưng không còn là current stack.
-- **Superseded:** đã có quyết định mới thay thế.
+## 1. Mục tiêu
+Tài liệu này cung cấp bức tranh toàn cảnh về các năng lực (Capabilities) của Nền tảng Dữ liệu FastOrder. Sơ đồ không đi sâu vào chi tiết công nghệ (Physical) hay luồng xử lý cụ thể (Pipeline), mà tập trung trả lời 3 câu hỏi cốt lõi:
+1. Dữ liệu đến từ đâu?
+2. Nền tảng có những phân lớp chức năng nào để xử lý dữ liệu đó?
+3. Ai là người khai thác giá trị cuối cùng?
 
 ---
+
+## 2. Sơ đồ Kiến trúc (Enterprise Overview)
+
+Sơ đồ dưới đây mô tả kiến trúc theo hướng phân lớp (Layered Architecture). Toàn bộ hệ thống Nền tảng dữ liệu được đặt dưới sự kiểm soát của một lớp Điều phối & Giám sát (Workflow Orchestration & Monitoring).
+
+```text
+================================================================================
+                    WORKFLOW ORCHESTRATION & MONITORING
+                    (Điều phối, lên lịch và giám sát toàn hệ thống)
+================================================================================
+                                      |
+                                      | Quản lý vòng đời
+                                      V
++-----------------------+      +-----------------------------------------------+
+|                       |      |  NỀN TẢNG DỮ LIỆU (DATA PLATFORM)             |
+|  NGUỒN DỮ LIỆU        |      |                                               |
+|  (Source Systems)     |      |  +-----------------------------------------+  |
+|                       |      |  | [A] Data Ingestion Layer                |  |
+|  - Operational DB     |======|=>|     (Cổng thu thập & Trung chuyển)      |  |
+|  - External APIs      | Trích|  +-----------------------------------------+  |
+|  - File-based Systems | xuất |                       |                       |
+|                       |      |                       V                       |
++-----------------------+      |  +-----------------------------------------+  |
+                               |  | [B] Data Lake Layer                     |  |
+                               |  |     (Lưu trữ thô - Bronze / Silver)     |  |
+                               |  +-----------------------------------------+  |
+                               |                       |                       |
+                               |                       V                       |
+                               |  +-----------------------------------------+  |
+                               |  | [C] Data Processing Layer               |  |
+                               |  |     (Động cơ Xử lý & Làm sạch)          |  |
+                               |  +-----------------------------------------+  |
+                               |                       |                       |
+                               |                       V                       |
+                               |  +-----------------------------------------+  |
+                               |  | [D] Data Warehouse Layer                |  |
+                               |  |     (Kho dữ liệu cốt lõi chuẩn hóa)     |  |
+                               |  +-----------------------------------------+  |
+                               |                       |                       |
+                               |                       V                       |
+                               |  +-----------------------------------------+  |
+                               |  | [E] Data Marts Layer                    |  |
+                               |  |     (Sales / Finance / Logistics)       |  |
+                               |  +-----------------------------------------+  |
+                               |                                               |
+                               +-----------------------------------------------+
+                                                      |
+                                                      | Phục vụ phân tích
+                                                      V
+                               +-----------------------------------------------+
+                               |  KHAI THÁC & ỨNG DỤNG (Data Consumption)      |
+                               |                                               |
+                               |  - Dashboards & BI Reports                    |
+                               |  - Business Users (CEO, Managers)             |
+                               +-----------------------------------------------+
+```
+## 3. Vai trò của các Phân lớp (Layer Capabilities)
+Thay vì nhìn Data Platform như một chiếc hộp đen, hệ thống được bóc tách thành các lớp với một trách nhiệm duy nhất (Single Responsibility):
+
+### 3.1. Nhóm Nguồn & Tiêu thụ
+Source Systems: Nơi sinh ra dữ liệu (Cơ sở dữ liệu bán hàng, API thời tiết/tỷ giá, File log hành vi).
+
+Data Consumption: Nơi khai thác dữ liệu. Các phòng ban (Sales, Logistics, Finance) sử dụng BI Dashboard để đưa ra quyết định dựa trên dữ liệu đã được tinh chế.
+
+### 3.2. Các phân lớp bên trong Data Platform
+Data Ingestion Layer: Chịu trách nhiệm kết nối và hút dữ liệu từ bên ngoài vào hệ thống một cách an toàn mà không làm ảnh hưởng đến nguồn.
+
+Data Lake Layer: Nơi lưu trữ vĩnh viễn dữ liệu thô (Bronze) và dữ liệu đã làm sạch bước đầu (Silver). Đảm bảo không mất mát dữ liệu gốc và có thể chạy lại quá trình xử lý bất cứ lúc nào.
+
+Data Processing Layer: "Động cơ" tính toán của hệ thống. Chịu trách nhiệm thực thi các logic chuyển đổi, kết hợp dữ liệu nặng nhọc nhất.
+
+Data Warehouse Layer: Lưu trữ dữ liệu đã được cấu trúc hóa, chuẩn hóa thành các thực thể kinh doanh cốt lõi (Khách hàng, Sản phẩm, Đơn hàng).
+
+Data Marts Layer: Dữ liệu từ Warehouse được chia nhỏ và đóng gói lại theo nhu cầu cụ thể của từng phòng ban (ví dụ: Sales Mart chứa các Fact/Dim chỉ phục vụ đội Sales) để tối ưu hiệu suất truy vấn.
+
+### 3.3. Lớp Điều phối Trung tâm
+Workflow Orchestration & Monitoring: Không nằm trên đường ống dẫn dữ liệu, mà đóng vai trò như "Nhạc trưởng". Nó quyết định khi nào quá trình Ingestion bắt đầu, khi nào Processing chạy, và gửi cảnh báo nếu có luồng xử lý nào thất bại.
+
+
+====================================================================================================
+FILE: ..\docs\02-architecture\03-physical-architecture.md
+====================================================================================================
+# Physical Architecture (Kiến trúc Vật lý)
+
+## 1. Mục tiêu
+Tài liệu này ánh xạ các khối chức năng từ Logical Architecture sang các công nghệ cụ thể được triển khai cho dự án FastOrder Data Platform. Trọng tâm của tài liệu là giải thích **tại sao (Rationale)** lại chọn công nghệ đó để giải quyết bài toán nghiệp vụ, thay vì các giải pháp thay thế khác.
+
+---
+
+## 2. Ánh xạ Công nghệ (Technology Mapping)
+
+| Khối chức năng (Logical) | Công nghệ triển khai (Physical) | Trách nhiệm chính |
+| :--- | :--- | :--- |
+| **Source Systems** | PostgreSQL, REST APIs, JSON/CSV Files | Hệ thống OLTP cốt lõi và dữ liệu ngoại vi. |
+| **Data Ingestion** | **Apache Airflow** (Python Operators) | Lên lịch và điều phối việc kéo dữ liệu từ Source. |
+| **Raw & Curated Zone** | **Azure Data Lake Storage Gen2** (ADLS Gen2) | Lưu trữ phân lớp theo Medallion (Bronze, Silver). |
+| **Data Processing** | **Apache Spark** (PySpark) | Xử lý Big Data, làm sạch và chuẩn hóa (Bronze ➔ Silver). |
+| **Analytics Storage** | **Azure Synapse Analytics** | Lưu trữ Data Warehouse (Gold Layer / Data Marts). |
+| **Modeling & Transform** | **dbt** (Data Build Tool) | Biến đổi dữ liệu có cấu trúc bằng SQL bên trong Synapse (Silver ➔ Gold). |
+| **Workflow Orchestration**| **Apache Airflow** (Dockerized) | Quản lý vòng đời toàn bộ DAGs (Ingest ➔ Spark ➔ dbt). |
+
+---
+
+## 3. Lập luận Quyết định Kiến trúc (Architecture Decisions)
+
+### 3.1. Tại sao Ingestion dùng Airflow mà không dùng Azure Data Factory (ADF)?
+* **Tính linh hoạt (Code-as-Configuration):** Airflow cho phép định nghĩa pipeline hoàn toàn bằng Python code, rất phù hợp để xử lý các logic ingestion phức tạp từ API (như xử lý rate limit, pagination) mà giao diện kéo thả của ADF khó tối ưu bằng.
+* **Môi trường giả lập (Local Development):** Dự án cần triển khai mượt mà trên Docker ở local. Airflow hoàn toàn mã nguồn mở và chạy tốt trên Docker, trong khi ADF là dịch vụ Cloud-native (bị khóa vào hệ sinh thái Azure) và khó test offline, đồng thời phát sinh chi phí ngay từ khâu phát triển.
+
+### 3.2. Tại sao Raw Zone dùng Azure Data Lake Storage Gen2?
+* **Hierarchical Namespace:** ADLS Gen2 hỗ trợ cấu trúc thư mục thực sự (thay vì thư mục ảo như S3 hay Blob Storage thông thường). Điều này mang tính sống còn để tổ chức Data Lake theo kiến trúc Medallion (ví dụ: `bronze/orders/yyyy/mm/dd`).
+* **Hiệu suất & Tích hợp:** Chuẩn giao tiếp ABFS (Azure Blob File System) của ADLS Gen2 được tối ưu hóa đặc biệt cho Apache Spark, giúp các luồng xử lý big data đọc/ghi với tốc độ rất cao.
+
+### 3.3. Tại sao Processing lại dùng Apache Spark?
+* **Khả năng mở rộng (Scalability):** Dữ liệu từ hệ thống E-commerce (50.000 đơn/ngày, cộng thêm Clickstream và Reviews) sẽ phình to rất nhanh. Spark xử lý phân tán trong bộ nhớ (In-memory), dễ dàng scan và parse hàng triệu dòng JSON/Parquet hiệu quả hơn nhiều so với việc dùng Pandas hay Python thuần.
+* **Định hình dữ liệu thô:** Spark rất mạnh trong việc áp dụng schema (Schema-on-read), loại bỏ dữ liệu hỏng (corrupted records), và lưu trữ lại dưới định dạng columnar như Parquet để tối ưu hóa cho các bước sau.
+
+### 3.4. Tại sao Warehouse lại là Azure Synapse Analytics?
+* **Chuyên trị OLAP:** Synapse sở hữu MPP (Massively Parallel Processing) engine, được sinh ra để quét các Fact tables hàng trăm triệu dòng và join với các Dimension tables trong mô hình Star Schema chỉ trong vài giây.
+* **Hệ sinh thái đồng nhất:** Nó kết nối xuyên suốt với ADLS Gen2 (để query trực tiếp dữ liệu Silver qua Serverless SQL) và tích hợp hoàn hảo với Power BI cho tầng Data Consumption.
+
+### 3.5. Tại sao dbt lại nằm sau Spark chứ không phải trước?
+Đây là sự phân tách trách nhiệm giữa **Heavy Compute** và **Business Logic**:
+* **Spark đi trước (Bronze ➔ Silver):** Đảm nhiệm các công việc "nặng nhọc" ở tầng File system: giải nén, parse JSON phức tạp, xử lý deduplication, và ép kiểu dữ liệu. Kết quả sinh ra bảng Silver sạch sẽ (dạng Parquet).
+* **dbt đi sau (Silver ➔ Gold):** Khi dữ liệu đã sạch và được nạp (hoặc expose) vào Synapse, dbt sẽ tiếp quản. Vì dbt chỉ dùng SQL, nó cực kỳ phù hợp để xây dựng Data Models (Fact/Dim), áp dụng các logic tính toán (như commission, profit margin), và thực hiện Data Quality Tests. Nếu dbt đi trước, nó sẽ không thể xử lý tốt các file JSON/CSV phi cấu trúc nằm trong Data Lake.
+
+---
+
+## 4. Luồng di chuyển Dữ liệu (Data Movement)
+
+Dữ liệu di chuyển qua các thành phần theo thứ tự sau (được Airflow gọi tuần tự):
+
+1. **Ingest (Extract & Load):** Airflow chạy Python Operators gọi API và kết nối DB ➔ Kéo dữ liệu thô đẩy thẳng vào `ADLS Gen2 (Bronze)`.
+2. **Process (Transform 1):** Airflow kích hoạt Spark Job (kết nối với ADLS Gen2). Spark đọc dữ liệu từ thư mục `Bronze`, làm sạch, đổi định dạng sang Parquet và ghi xuống thư mục `Silver`.
+3. **Load to DWH:** Synapse dùng PolyBase (hoặc Copy Activity) đọc dữ liệu Parquet từ thư mục `Silver` và nạp vào các Staging Tables bên trong Data Warehouse.
+4. **Modeling (Transform 2):** Airflow gọi `dbt run`. dbt thực thi các câu lệnh SQL bên trong Synapse để biến đổi Staging Tables thành các bảng Fact và Dimension (Gold Layer / Data Marts).
+
+
+====================================================================================================
+FILE: ..\docs\02-architecture\04-data-flow-diagram.md
+====================================================================================================
+# Data Flow Diagram
+
+This diagram illustrates the end-to-end data flow of the Enterprise E-Commerce Data Platform, from data ingestion to analytics and machine learning.
+
+<p align="center">
+  <img src="../../images/DF.png" alt="Data Pipeline Architecture" width="1000">
+</p>
+
+## Description
+
+The data pipeline consists of the following stages:
+
+1. **Data Sources**
+   - Operational Databases
+   - External APIs
+   - File-based Systems
+
+2. **Data Ingestion**
+   - CDC for database changes
+   - HTTP for API ingestion
+   - File ingestion for batch data
+
+3. **Bronze Layer**
+   - Stores raw data incrementally in Azure Data Lake Storage.
+
+4. **Silver Layer**
+   - Apache Spark transforms and cleans raw data into structured datasets.
+
+5. **Data Warehouse**
+   - Azure Synapse Analytics stores modeled enterprise data.
+   - dbt is used for data modeling and transformation.
+
+6. **Gold Layer**
+   - Business-ready data marts optimized for reporting and analytics.
+
+7. **Consumption**
+   - Power BI dashboards
+   - Machine Learning applications
+
+
+====================================================================================================
+FILE: ..\docs\06-decisions\01-decision-log.md
+====================================================================================================
+# Technical Decision Log
 
 ## D-001 — Business-first platform design
 
@@ -18,8 +204,6 @@
 **Decision:** Bắt đầu từ FastOrder business context và KPI, không bắt đầu từ tool.
 
 **Reason:** Tránh project trở thành demo công nghệ không có business narrative.
-
----
 
 ---
 
@@ -32,16 +216,12 @@
 
 ---
 
----
-
 ## D-003 — Schema-first instead of Pandas-managed schema
 
 **Date:** 29/07/2026  
 **Decision:** Dùng `database/schema.sql`; không dùng `to_sql(if_exists="replace")` để Pandas tự tạo bảng.
 
 **Reason:** Kiểm soát data types, constraints, naming, FK và indexes.
-
----
 
 ---
 
@@ -55,8 +235,6 @@
 - Học Engine, Connection và Transaction.
 - Dùng chung cho loader và simulator.
 - Không cần ORM cho pipeline data engineering.
-
----
 
 ---
 
@@ -74,8 +252,6 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
----
-
 ## D-006 — Thin Airflow DAGs
 
 **Date:** 29/07/2026  
@@ -85,16 +261,12 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
----
-
 ## D-007 — No `is_simulated` or `simulation_id`
 
 **Date:** 29/07/2026  
 **Decision:** Không đánh dấu record simulator trong operational tables.
 
 **Reason:** Simulator được xem là producer của operational data; downstream không cần phân biệt seed và simulated record.
-
----
 
 ---
 
@@ -109,16 +281,12 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
----
-
 ## D-009 — Surrogate primary key for geolocation
 
 **Date:** 29/07/2026  
 **Decision:** Không dùng ZIP/lat/lng làm composite primary key.
 
 **Reason:** Source duplicate và precision rounding có thể vi phạm uniqueness; không có business rule xác nhận natural key.
-
----
 
 ---
 
@@ -133,16 +301,12 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
----
-
 ## D-011 — Documentation must evolve with implementation
 
 **Date:** 29/07/2026  
 **Decision:** Mỗi thay đổi phải kết thúc bằng “Docs cần cập nhật” hoặc “Không cần cập nhật docs”.
 
 **Reason:** Ngăn architecture, schema và runbook trở nên lạc hậu.
-
----
 
 ---
 
@@ -156,6 +320,20 @@ fastorder/db/  → connection.py, init_db.py
 - Bảo vệ dữ liệu gốc tại lớp Bronze để đảm bảo Data Lineage và phục vụ Root Cause Analysis về sau. Pipeline nạp dữ liệu cũng nhờ đó mà nhẹ nhàng và dễ bảo trì hơn.
 ---
 
+## D-013 — Synthetic Sparse Inventory Strategy
+
+**Date:** 30/07/2026  
+**Decision:** Sử dụng chiến lược phân bổ tồn kho thưa (Sparse Inventory) và sinh số lượng ngẫu nhiên có kiểm soát (Fixed Random Seed).  
+**Quy tắc phân bổ:**
+- Mỗi sản phẩm có mặt tại đúng 1 kho chính (Main warehouse: WH_HN hoặc WH_HCM) với số lượng 50–200.
+- Mỗi sản phẩm có mặt tại đúng 1 kho vùng (Regional warehouse: WH_HP, WH_DN, hoặc WH_CT) với số lượng 20–100.
+- 20% xác suất sản phẩm có mặt ở kho thứ ba (trong số các kho còn lại) với số lượng 10–50.
+
+**Reason:** 
+- Tránh việc phân bổ tất cả sản phẩm vào tất cả các kho (Dense Inventory), gây ra sự thiếu thực tế về mặt nghiệp vụ logistics và làm phình to database không cần thiết (chỉ tạo ~72.000 records thay vì ~164.000 records).
+- Việc dùng Fixed Seed (`random.seed(42)`) đảm bảo tính tái lập (reproducibility) khi reset DB, hỗ trợ tốt nhất cho quá trình debug, test và data validation.
+
+```markdown
 ---
 
 ## D-013 — Synthetic Sparse Inventory Strategy
@@ -173,8 +351,6 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
----
-
 ## D-014 — Faker Simulator: State Machine & Quantity Logic
 
 **Date:** 30/07/2026  
@@ -189,8 +365,6 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
----
-
 ## D-015 — Faker Simulator: Concurrency Control & B2C Limit
 
 **Date:** 30/07/2026  
@@ -201,8 +375,6 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:** 
 - Đảm bảo tính chân thực của dữ liệu mô phỏng.
 - Kỹ thuật Optimistic Locking (kiểm tra rowcount) khóa chặt lỗ hổng Overselling khi chạy nhiều tiến trình Simulator song song, nếu có tranh chấp tài nguyên (race condition), transaction sẽ lập tức Rollback.
-
----
 
 ## D-016 — Architecture of Simulator Runner
 
@@ -219,8 +391,6 @@ fastorder/db/  → connection.py, init_db.py
 - Nguyên tắc Fail-fast giúp phát hiện ngay lỗi Database/Logic thay vì chạy lặp vô hạn. Graceful shutdown ngăn chặn treo transaction.
 - Independent validator chốt chặn chất lượng dữ liệu cuối phiên đảm bảo dữ liệu sinh ra không vi phạm Data Invariants (12/12 rules PASS).
 
----
-
 ## D-017 — At-Least-Once Bronze Ingestion & Timestamp-based Extraction
 
 **Date:** 05/08/2026
@@ -235,8 +405,6 @@ fastorder/db/  → connection.py, init_db.py
 *   Medallion Architecture sinh ra là để các lớp san sẻ gánh nặng cho nhau. Bronze có nhiệm vụ lấy dữ liệu nhanh nhất và an toàn nhất (append-only), còn Silver xử lý logic nghiệp vụ (Deduplicate).
 *   Upper Watermark giúp cô lập batch dữ liệu, tránh việc query đuổi theo dữ liệu do Simulator sinh ra liên tục.
 
----
-
 ## D-018 — Timestamp Honesty & Schema Enforcement for Incremental Extraction
 
 **Date:** 05/08/2026
@@ -250,8 +418,6 @@ fastorder/db/  → connection.py, init_db.py
 *   Giá trị `updated_at = NULL` sẽ vĩnh viễn lọt lưới Incremental Query, nên `NOT NULL` là lá chắn bắt buộc.
 *   Composite Index là thành phần vật lý không thể thiếu để duy trì hiệu năng khi query quét theo watermark ngày càng phình to.
 
----
-
 ## D-019 — Idempotent Overwrite for Bronze Layer (Extraction ID Reuse)
 
 **Date:** 06/08/2026
@@ -264,8 +430,6 @@ fastorder/db/  → connection.py, init_db.py
 *   Ngăn chặn sự tích tụ của các thư mục/file Parquet rác trong Data Lake khi tiến trình crash giữa bước "Ghi Parquet" và "Commit Checkpoint". 
 *   Dù tầng Silver có năng lực Deduplicate, việc giữ sạch tầng vật lý Bronze ngay từ đầu (giảm thiểu số lượng file trùng lặp) là tiêu chuẩn công nghiệp tốt nhất, giúp giảm tải IO và tránh phải xây dựng các kịch bản dọn rác (Garbage Collection/Vacuum) phức tạp.
 
----
-
 ## D-020 — Use Pending Batch Context for Stable Crash Recovery
 
 **Date:** 07/08/2026
@@ -277,8 +441,6 @@ fastorder/db/  → connection.py, init_db.py
 * Checkpoint chỉ trả lời câu hỏi "Pipeline đã hoàn thành đến đâu?", nhưng không biết "Tiến trình đang làm dở việc gì?". 
 * Việc không có Pending Context sẽ khiến tiến trình khi restart bị mất `extraction_id` cũ, tự động sinh ID mới và ghi file Parquet mới, dẫn đến rác dữ liệu trên Data Lake hoặc ghi đè sai batch. Pending Context đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) được bảo toàn tuyệt đối xuyên suốt các lần khởi động lại tiến trình.
 
----
-
 ## D-021 — Áp dụng Stable Retry Context và Fail-Fast cho State Management
 
 **Date:** 2026-08-07
@@ -289,8 +451,6 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 * Đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) không bị biến đổi xuyên suốt các lần restart.
 * Việc tự động bỏ qua lỗi của file trạng thái (như file bị rỗng do I/O error) có thể dẫn đến hậu quả nghiêm trọng như kéo lại toàn bộ lịch sử dữ liệu (Disaster Risk) hoặc ghi đè sai batch. Con người phải can thiệp khi State files bị hỏng.
-
----
 
 ## D-022 — Sử dụng Airflow Context cho Stable Run Identity và Fail-Fast Mount Guards
 
@@ -304,11 +464,7 @@ fastorder/db/  → connection.py, init_db.py
 *   Đảm bảo tính Deterministic của tiến trình khi chạy trên Airflow. `run_id` mặc định của Airflow chứa các ký tự đặc biệt có thể phá hỏng tiến trình ghi file Parquet trên môi trường Windows bind mount.
 *   Bảo vệ Data Pipeline khỏi tình trạng chạy thành công giả (Fake success) khi mount bị lỗi, giúp phát hiện sớm các vấn đề về cơ sở hạ tầng.
 
----
-
 ## D-023 — Hoàn tất Local Airflow MVP và Tiếp cận ADLS theo hướng Probe-First
-
-**Status:** Historical — completed Azure integration phase; current target superseded by D-043.
 
 **Date:** 2026-08-10
 **Decision:**
@@ -319,8 +475,6 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Việc phân lập hạ tầng (Infrastructure Isolation) giúp tách bạch các lỗi liên quan đến Mạng/Bảo mật (Azure Auth, RBAC) khỏi các lỗi liên quan đến Data Logic (Runner, Airflow DAG). Nếu hệ thống crash, ta biết chính xác nguyên nhân nằm ở Data Layer hay Transport Layer.
 
----
-
 ## D-024 — Chuyển đổi Timezone trong DAG trước khi sinh Partition
 
 **Date:** 2026-08-11
@@ -330,11 +484,7 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Đảm bảo metadata partitioning trên ADLS (`ingestion_date=YYYY-MM-DD`) đồng nhất tuyệt đối với ngày vận hành kinh doanh (Business Convention) tại Việt Nam. Nếu chỉ gọi `.replace(tzinfo=None)` trên UTC time, dữ liệu của phiên chạy đầu ngày tại VN có thể bị rơi nhầm vào partition của ngày hôm trước do lệch múi giờ.
 
----
-
 ## D-025 — Cleanup Bronze Root và Giao phó I/O cho ADLS Client
-
-**Status:** Superseded by D-043/D-045 — separation principle remains active; physical client is now S3/MinIO.
 
 **Date:** 2026-08-11
 **Decision:**
@@ -343,11 +493,7 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Loại bỏ dư thừa kỹ thuật (Tech Debt) của giai đoạn Local MVP, đảm bảo kiến trúc tuân thủ nguyên tắc Separation of Concerns. DAG và Runner không cần quan tâm Storage vật lý nằm ở đâu.
 
----
-
 ## D-026 — Lựa chọn Kiến trúc Cloud-Native File Ingestion và Time-Based Partitioning
-
-**Status:** Superseded by D-043 — ADF/cloud-only transport is no longer current target; time-based file organization remains useful.
 
 **Date:** 2026-08-11
 **Decision:**
@@ -359,11 +505,7 @@ fastorder/db/  → connection.py, init_db.py
 *   Việc dùng máy tính cá nhân làm trạm trung chuyển không có khả năng mở rộng (Scalability) và không phản ánh đúng thực tế doanh nghiệp. ADF là công cụ Managed Service tối ưu nhất để chịu tải tác vụ data movement từ bên ngoài vào Cloud Landing Zone.
 *   Dữ liệu thực tế luôn đến theo cửa sổ thời gian (Time window). Phân vùng dữ liệu theo `event_date` sát với nghiệp vụ hơn, đồng thời tối ưu hóa quá trình đọc dữ liệu của Apache Spark ở các layer sau (Bronze -> Silver).
 
----
-
 ## D-027 — Phân tách trách nhiệm I/O trong File-based Ingestion
-
-**Status:** Partially superseded by D-043 — responsibility separation remains active; ADF/Databricks-specific mapping is historical.
 
 **Date:** 2026-08-12
 **Decision:**
@@ -372,11 +514,7 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Ngăn chặn Airflow Worker phải chịu tải các tác vụ không phù hợp (giải nén file gigabytes, xử lý 33 triệu rows). Airflow chỉ nên làm Orchestrator. Trả các tác vụ Heavy Compute (Extract, Partitioning) về cho nền tảng Distributed Compute đúng nghĩa là Spark/Databricks.
 
----
-
 ## D-028 — Xác thực Storage cho Databricks qua Managed Identity
-
-**Status:** Historical Azure security decision — no longer part of current local runtime.
 
 **Date:** 2026-08-12
 **Decision:**
@@ -386,11 +524,7 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Thực hành Security Best Practice theo khuyến nghị của Microsoft và kiến trúc Unity Catalog. Chấm dứt việc nhúng `client_secret` hay `account_key` vào mã nguồn Spark Conf, ngăn ngừa rủi ro rò rỉ credential và giảm chi phí vận hành xoay vòng khóa (key rotation).
 
----
-
 ## D-029 — YOOCHOOSE Landing Preparation Strategy
-
-**Status:** Partially superseded by D-043 — Landing/source-preservation and daily organization remain active; Azure-specific path is historical.
 
 **Date:** 13/08/2026  
 **Context:** YOOCHOOSE clickstream is distributed as a compressed `yoochoose-data.7z` archive containing approximately 33 million click events. The file-based ingestion flow requires a cloud-native source boundary without relying on the developer's local filesystem.
@@ -432,16 +566,12 @@ Daily organization was selected after profiling the actual dataset:
 - `prepared/` becomes the source boundary for Airflow file-based ingestion.
 - Analytical/Silver partitioning will be decided independently from Landing layout.
 
----
-
 ## D-030 — File Manifest Storage Strategy for MVP
 
 **Date:** 13/08/2026  
 **Decision:** File Manifest MVP uses shared atomic JSON state; dedicated PostgreSQL metadata store deferred to future scale.
 
 **Reason:** The current source operates at a scale of a few hundred physical files, and the Airflow File DAG will execute as a single active run. The `state/` directory is already a persistent shared volume, and the atomic JSON pattern from the Database Ingestion MVP can be directly reused. This fulfills the MVP requirement without introducing additional Azure or Database infrastructure complexities at this stage.
-
----
 
 ## D-031 — File-Based Bronze Writer Architecture and Runner Observability
 
@@ -455,7 +585,6 @@ Daily organization was selected after profiling the actual dataset:
 
 **Reason:** Preserving the `discovered_at` timestamp ensures that retries maintain the exact same ingestion ID and logical time, guaranteeing deterministic output paths and idempotent overwrites in Bronze. Differentiating between `retried` (an attempt state) and `processed` (a success state) provides clear operational visibility for Airflow logs.
 
----
 
 ## D-032 — Airflow Orchestration for File-Based Ingestion
 
@@ -476,8 +605,6 @@ Proceed to Airflow orchestration by creating a DAG that directly calls `run_file
 - The local integration testing phase is complete and cleaned up.
 - The next step focuses entirely on Airflow DAG development and containerized execution.
 
----
-
 ## D-033 — Weather API Sourcing Strategy (Forecast vs. Historical)
 
 **Date:** 16/08/2026  
@@ -494,8 +621,6 @@ Proceed to Airflow orchestration by creating a DAG that directly calls `run_file
 - The Weather API Client will be designed to support both current and historical forecast endpoints using a shared data contract.
 - The platform gains immediate analytical utility from the backfilled weather data, avoiding the "cold start" problem of waiting months for forecast data to accumulate.
 
----
-
 ## D-034 — Weather API Bronze Storage Strategy (Sidecar Pattern)
 
 **Date:** 16/08/2026  
@@ -509,8 +634,6 @@ API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`
 **Consequences:** 
 - Each API ingestion unit corresponds to a specific directory structure: `bronze/weather/open_meteo/forecast/ingestion_date=.../warehouse_id=.../ingestion_id=.../`.
 - The Weather API Client will return pure Python dictionaries (parsed JSON) instead of Pandas DataFrames.
-
----
 
 ## D-035 — Tính lũy đẳng (Idempotency) của API Ingestion và Chiến lược Retry 2 tầng
 
@@ -527,8 +650,6 @@ API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`
 **Consequences:** 
 - Tích hợp end-to-end thành công với khả năng phục hồi cục bộ (ví dụ: phục hồi sau crash bằng cách skip 4 kho hàng đã commit và ingest chính xác 1 kho còn lại).
 
----
-
 ## D-036 — Historical Forecast Backfill Strategy
 
 **Date:** 16/08/2026  
@@ -543,11 +664,7 @@ Forecast ongoing = 48h future window, incremental periodic.
 - Avoid overlapping rolling 90-day backfills (ngăn chặn việc backfill trôi dạt theo ngày chạy thực tế).
 - Deterministic replay (đảm bảo tính tất định khi Airflow chạy lại các khoảng thời gian trong quá khứ).
 
----
-
 ## D-037 — Thiết kế xử lý Silver Weather Forecast
-
-**Status:** Superseded by D-039 final Forecast Silver design.
 
 **Date:** 20/08/2026  
 
@@ -574,11 +691,8 @@ Thiết kế này ngăn chặn việc xây dựng một notebook khổng lồ ô
 - Hỗ trợ tốt xử lý incremental.
 - Tạo ra các Silver pipelines an toàn khi chạy lại (retry-safe).
 
----
 
 ## D-038 — Thiết kế Data Quality và Transformation cho Silver Weather Forecast
-
-**Status:** Superseded by D-039 final Forecast Silver design.
 
 **Date:** 22/08/2026
 
@@ -620,11 +734,7 @@ Pipeline hiện tại kiểm tra:
 
 Các bài kiểm tra Data Quality không tự động làm sạch hay sửa đổi các bản ghi không hợp lệ. Nếu bất kỳ chỉ số Data Quality trọng yếu nào lớn hơn 0, pipeline sẽ thất bại trước khi ghi xuống Silver.
 
----
-
 ## D-039 — Thiết kế Xử lý Silver Weather Forecast
-
-**Status:** Active logical design; physical runtime port to MinIO/local Spark is pending.
 
 **Date:** 22/08/2026
 
@@ -686,11 +796,9 @@ Hai Databricks notebooks mang hai trách nhiệm riêng biệt:
 - `weather_forecast_silver_pipeline`: Dành cho thực thi End-to-End, phát hiện pending data, xử lý NO_OP và ghi dữ liệu Silver.
 Sự phân tách này ngăn việc notebook phát triển trở thành entry point cho production pipeline.
 
----
+
 
 ## D-040 — Weather History Silver Processing Design
-
-**Status:** Active logical design; physical runtime port to MinIO/local Spark is pending.
 
 **Date:** 29/08/2026
 
@@ -858,8 +966,6 @@ pipeline trả:
 
 và không thực hiện Transformation, Data Quality, Validation hoặc Silver Write.
 
----
-
 ## D-041 — Generic PostgreSQL Incremental Ingestion Framework
 
 **Date:** 30/08/2026
@@ -885,9 +991,9 @@ Framework hỗ trợ khai báo Composite Primary Key.
 
 Giữ nguyên crash-recovery protocol và flat checkpoint format đã được chứng minh.
 
----
 
-## D-042 — DAG Factory cho Operational Tables Ingestion
+
+## D-041 — DAG Factory cho Operational Tables Ingestion
 
 **Date:** 30/08/2026
 ### Bối cảnh
@@ -905,9 +1011,7 @@ Một vòng lặp Python sẽ đọc danh sách cấu hình bảng (bao gồm t�
 Mỗi bảng được cấp một DAG ID riêng biệt.
 Luồng điều phối (orchestration logic) được tập trung tại một nơi duy nhất, đảm bảo tính DRY (Don't Repeat Yourself).
 
----
-
-## D-043 — Local-First Development Stack (Azure -> MinIO / Local Compute)
+## D-042 — Migrate FastOrder Development Platform from Azure to Local-First Stack
 
 ### Context
 Tài khoản Azure student credits đã cạn kiệt, dẫn đến việc không thể tiếp tục sử dụng ADLS và Databricks compute. Dự án cần duy trì khả năng tái tạo (reproducible) liền mạch mà không phụ thuộc vào các tài nguyên cloud trả phí.
@@ -929,19 +1033,18 @@ Chuyển đổi toàn bộ kiến trúc phát triển sang một local-first sta
 - Power BI Desktop.
 
 ### Validation
+Đường dẫn di chuyển (migration path) đầu tiên được chứng nhận thành công là Operational Orders:
+`PostgreSQL → Generic Incremental Runner → PyArrow Parquet → MinIO Bronze`
 
-Operational PostgreSQL migration đã được chứng nhận hoàn tất trên MinIO:
-
-`PostgreSQL -> Generic Incremental Runner -> PyArrow Parquet -> boto3 -> MinIO Bronze`
-
-Kết quả:
-
-- 11/11 operational tables PASS E2E reconciliation.
-- Orders certification: 99,492 source rows = 99,492 distinct Bronze PK, 20 production Parquet files.
-- Orders replay trả `NO_OP` khi source không đổi.
-- Checkpoint khớp source upper watermark; pending context sạch.
-- Production Parquet dùng `timestamp[us]`; không phát hiện `TIMESTAMP(NANOS)`.
-- Framework đã PASS cả single PK, composite PK và bảng lớn `geolocation` (>1 triệu rows).
+**Kết quả xác thực:**
+- Source rows: 99,492
+- Bronze distinct primary keys: 99,492
+- Production Parquet files: 20
+- Checkpoint khớp hoàn toàn với source upper watermark.
+- Pending context hoàn toàn sạch (clean).
+- Replay (chạy lại) không trả về dữ liệu mới (`NO_OP`).
+- Production Parquet files sử dụng `timestamp[us]`.
+- Không phát hiện lỗi `TIMESTAMP(NANOS)`.
 
 ### Consequences
 
@@ -956,51 +1059,125 @@ Kết quả:
 - Trạng thái cục bộ (local state) bị buộc chặt vào môi trường development.
 - Các yếu tố HA (High Availability) và Security chuẩn production nằm ngoài phạm vi hiện tại của dự án.
 
+
+====================================================================================================
+FILE: ..\docs\07progress\02-current-status.md
+====================================================================================================
+## Current Project Status
+
+Current phase:
+
+**Local-First Architecture Migration**
+
+### Platform Status
+- Azure Data Lake Storage → MinIO ✅
+- Azure Storage Client → boto3 ✅
+
+### Operational PostgreSQL (MinIO) Status
+- Generic framework migration ✅
+- Orders migration certified ✅
+- Migrate remaining tables ⏳
+
+
+====================================================================================================
+FILE: ..\docs\07progress\03-next-milestones.md
+====================================================================================================
+# Next Milestones
+
+**Bắt đầu từ:** sau ngày 29/07/2026
+
+## Milestone 10 — Post-load validation
+
+**Must-have**
+
+- So sánh số dòng giữa từng CSV và bảng PostgreSQL.
+- Xác nhận row count geolocation sau khi đổi surrogate key.
+- Kiểm tra FK orphan:
+  - orders → customers.
+  - order_items → orders/products/sellers.
+  - payments/reviews → orders.
+- Kiểm tra các cột NOT NULL.
+- Kiểm tra min/max timestamp.
+- Ghi validation summary.
+
+**Definition of Done**
+
+- 9 bảng nguồn được đối chiếu.
+- Không có orphan records ngoài ngoại lệ đã giải thích.
+- Có file kết quả trong `docs/07-progress/`.
+
 ---
 
-## D-044 — Operational Bronze Certification Requires Data Reconciliation
+## Milestone 11 — Seed warehouses and inventory
 
-**Date:** 31/08/2026  
-**Status:** Active
+**Must-have trước simulator**
 
-**Decision:** Airflow task success, checkpoint advancement hoặc file existence **không đủ** để chứng nhận một operational pipeline. Certification phải đối chiếu tối thiểu:
+- Xác định danh sách warehouse.
+- Gán city/state.
+- Khởi tạo inventory theo product và warehouse.
+- Xác định business rule gán order item vào warehouse.
 
-- source row count;
-- Bronze distinct business PK coverage;
-- checkpoint == source upper watermark;
-- pending context absent;
-- Bronze max cursor reaches source upper;
-- path/metadata contract;
-- representative physical Parquet schema;
-- replay behavior khi source không đổi.
+**Không làm quá mức**
 
-**Reason:** Control-plane success có thể tồn tại cùng data-plane corruption hoặc thiếu dữ liệu. Sự cố Orders legacy artifacts đã chứng minh cần E2E reconciliation độc lập.
+- Chưa cần inventory reservation engine phức tạp.
+- Chưa cần tối ưu logistics.
+- Chưa cần nhiều loại tồn kho nếu simulator chưa dùng.
 
 ---
 
-## D-045 — MinIO Uses S3-Compatible boto3 Client and Layer Buckets
+## Milestone 12 — Faker simulator design
 
-**Date:** 31/08/2026  
-**Status:** Active
+Thiết kế trước khi code:
 
-**Decision:**
+- Những event nào được tạo?
+- Tần suất mỗi event?
+- Bảng nào INSERT?
+- Bảng nào UPDATE?
+- Transaction boundary?
+- Cách cập nhật `updated_at`?
+- Cách bảo đảm FK?
+- Cách tránh số lượng tồn kho âm?
 
-- Dùng `boto3` với S3-compatible API thay vì MinIO-specific SDK.
-- MinIO buckets: `landing`, `bronze`, `silver`, `gold`.
-- `landing` chủ yếu dành cho file source boundary; Operational DB và API có thể ghi thẳng Bronze.
-- Deterministic object key được giữ để retry overwrite đúng logical ingestion unit.
+Event tối thiểu:
 
-**Reason:** Giảm vendor coupling, vẫn giữ object-storage semantics và làm local environment gần data-lake architecture hơn local filesystem thuần.
+- Tạo customer.
+- Tạo order và order items.
+- Tạo payment.
+- Chuyển trạng thái order.
+- Trừ inventory.
+- Tạo review sau delivered.
 
 ---
 
-## D-046 — Local Analytics Target: Spark + Delta + ClickHouse + dbt Core
+## Milestone 13 — Faker simulator implementation
 
-**Date:** 31/08/2026  
-**Status:** Target / not yet implemented
+- Python process riêng, không phải Airflow DAG.
+- Dùng SQLAlchemy Core.
+- Transaction theo business event.
+- Có logging và error handling.
+- Có chế độ chạy một lần để test.
+- Có chế độ chạy liên tục sau khi ổn định.
 
-**Decision:** Sau khi các ingestion flow được migrate sang MinIO:
+---
 
-`MinIO Bronze -> Local Spark/PySpark + Delta Lake OSS -> ClickHouse -> dbt Core -> Power BI Desktop`
+## Milestone 14 — Airflow incremental PostgreSQL → Bronze
 
-**Reason:** Giữ được separation giữa file-based heavy processing và OLAP warehouse, không cần paid cloud services. ClickHouse được chọn làm server OLAP/DWH thay vì dùng PostgreSQL làm warehouse; DuckDB vẫn có thể dùng như công cụ local phụ trợ nhưng không phải warehouse chính.
+- Mỗi entity là task hoặc task group phù hợp.
+- Timestamp-based incremental extraction bằng `updated_at`.
+- Watermark riêng theo entity.
+- Retry độc lập.
+- Không gọi đây là log-based CDC.
+- Ghi raw data vào Bronze theo cấu trúc partition đã chốt.
+
+---
+
+## Milestone 15 trở đi
+
+```text
+Bronze → Silver bằng PySpark
+External APIs và file-based sources
+Silver → Analytics storage
+dbt Gold models
+Power BI dashboards
+Data quality, monitoring, CI/CD và documentation polish
+```
