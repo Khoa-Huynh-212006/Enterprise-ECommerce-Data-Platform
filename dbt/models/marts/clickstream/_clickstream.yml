@@ -49,3 +49,41 @@ models:
       - name: session_count
         data_tests:
           - not_null
+          
+  - name: agg_clickstream_daily
+    description: "Daily clickstream aggregate mart. Grain: một dòng cho mỗi calendar date."
+
+    columns:
+      - name: date_key
+        data_tests:
+          - not_null
+          - unique
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: event_date
+        data_tests:
+          - not_null
+          - unique
+
+      - name: event_count
+        data_tests:
+          - not_null
+
+      - name: active_session_count
+        data_tests:
+          - not_null
+
+      - name: distinct_item_count
+        data_tests:
+          - not_null
+
+      - name: distinct_category_count
+        data_tests:
+          - not_null
+
+      - name: sessions_started
+        data_tests:
+          - not_null
