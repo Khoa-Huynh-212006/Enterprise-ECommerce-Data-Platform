@@ -1,39 +1,75 @@
-# FastOrder: Order State Machine
+# FastOrder Order State Machine
 
-Tài liệu này định nghĩa Vòng đời Trạng thái (Lifecycle) của một Đơn hàng trong hệ thống FastOrder, làm cơ sở cho Data Generator (Simulator) sinh các sự kiện thay đổi trạng thái (CDC events).
+## 1. Mục tiêu
 
-## 1. Trạng thái Khởi tạo (Initial State)
+Tài liệu này định nghĩa vòng đời hợp lệ của `orders.order_status` trong FastOrder Simulator.
 
-Tất cả các đơn hàng được tạo ra từ event `CREATE_ORDER` bắt buộc phải mang trạng thái:
-* **`created`**: Đơn hàng vừa được khởi tạo cùng với thông tin thanh toán (payment instruction).
+**Quan trọng:** PostgreSQL `orders` hiện là **current-state table**. Simulator thực hiện `INSERT/UPDATE` trực tiếp; hệ thống chưa có event store ghi lại mọi transition. Timestamp-based ingestion chỉ quan sát các version mà nó kịp poll, vì vậy không được gọi đây là log-based CDC hoặc khẳng định đã lưu đầy đủ mọi event chuyển trạng thái.
 
-## 2. Luồng Chuyển đổi Hợp lệ (Valid Transitions)
+---
 
-Simulator khi thực thi event `ADVANCE_ORDER_STATUS` chỉ được phép tịnh tiến trạng thái theo sơ đồ dưới đây (không được random nhảy cóc):
+## 2. Initial State
+
+Mọi order mới do simulator tạo bắt đầu với:
+
+- `created` — order đã được tạo cùng payment instruction và inventory transaction tương ứng.
+
+---
+
+## 3. Valid Transitions
 
 ```text
 created
-  ├── approved    (Thanh toán được xác nhận / Đơn COD được duyệt)
-  ├── canceled    (Khách hàng hủy hoặc thanh toán lỗi)
-  └── unavailable (Lỗi hệ thống hoặc thất thoát kho thực tế)
+  ├── approved
+  ├── canceled
+  └── unavailable
 
 approved
-  ├── processing  (Kho bắt đầu đóng gói)
-  └── canceled    (Hủy trước khi xuất kho)
+  ├── processing
+  └── canceled
 
 processing
-  ├── shipped     (Bàn giao cho đơn vị vận chuyển)
-  └── canceled    (Hủy do lỗi đóng gói / hư hỏng phút chót)
+  ├── shipped
+  └── canceled
 
 shipped
-  └── delivered   (Giao hàng thành công)
-  ```
+  └── delivered
+```
 
-## 3. Trạng thái Kết thúc (Terminal States)
-Khi đơn hàng đạt đến một trong các trạng thái sau, Simulator sẽ ngừng tác động (không sinh thêm event cho đơn hàng này):
+### Ý nghĩa
 
+| State | Ý nghĩa nghiệp vụ |
+|---|---|
+| `created` | Đơn vừa được tạo |
+| `approved` | Thanh toán/COD đã được duyệt |
+| `processing` | Kho đang xử lý/đóng gói |
+| `shipped` | Đã bàn giao cho đơn vị vận chuyển |
+| `delivered` | Giao hàng thành công |
+| `canceled` | Đơn bị hủy |
+| `unavailable` | Không thể tiếp tục xử lý do điều kiện hệ thống/hàng hóa |
+
+---
+
+## 4. Terminal States
+
+Simulator không advance thêm khi order đã ở một trong các trạng thái:
+
+```text
 delivered
-
 canceled
-
 unavailable
+```
+
+---
+
+## 5. Data Engineering Implication
+
+Operational ingestion dùng cursor theo `updated_at` để lấy **observed versions** của current-state table.
+
+Ví dụ, order có thể thực tế đi qua:
+
+```text
+created -> approved -> processing -> shipped -> delivered
+```
+
+nhưng nếu các transition diễn ra giữa hai lần poll, Bronze chỉ có thể chứa những version đã được quan sát. Muốn có transition history đầy đủ cần event log hoặc log-based CDC; FastOrder hiện chưa giả lập dữ liệu lịch sử không quan sát được.

@@ -1,11 +1,25 @@
 # Technical Decision Log
 
+> **Last consolidated:** 31/08/2026  
+> Tài liệu này là decision history của project. Các quyết định Azure/Databricks cũ được **giữ lại như historical context** thay vì xóa, nhưng trạng thái `Superseded` phải được đọc trước khi dùng làm current architecture. Decision IDs bị trùng trong bản cũ đã được sửa: DAG Factory là D-042 và Local-First migration là D-043.
+
+## Cách đọc
+
+- **Active:** đang là contract hiện hành.
+- **Target:** đã chốt hướng nhưng chưa triển khai.
+- **Historical:** quyết định đúng ở thời điểm trước nhưng không còn là current stack.
+- **Superseded:** đã có quyết định mới thay thế.
+
+---
+
 ## D-001 — Business-first platform design
 
 **Date:** 24–27/07/2026  
 **Decision:** Bắt đầu từ FastOrder business context và KPI, không bắt đầu từ tool.
 
 **Reason:** Tránh project trở thành demo công nghệ không có business narrative.
+
+---
 
 ---
 
@@ -18,12 +32,16 @@
 
 ---
 
+---
+
 ## D-003 — Schema-first instead of Pandas-managed schema
 
 **Date:** 29/07/2026  
 **Decision:** Dùng `database/schema.sql`; không dùng `to_sql(if_exists="replace")` để Pandas tự tạo bảng.
 
 **Reason:** Kiểm soát data types, constraints, naming, FK và indexes.
+
+---
 
 ---
 
@@ -37,6 +55,8 @@
 - Học Engine, Connection và Transaction.
 - Dùng chung cho loader và simulator.
 - Không cần ORM cho pipeline data engineering.
+
+---
 
 ---
 
@@ -54,6 +74,8 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
+---
+
 ## D-006 — Thin Airflow DAGs
 
 **Date:** 29/07/2026  
@@ -63,12 +85,16 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
+---
+
 ## D-007 — No `is_simulated` or `simulation_id`
 
 **Date:** 29/07/2026  
 **Decision:** Không đánh dấu record simulator trong operational tables.
 
 **Reason:** Simulator được xem là producer của operational data; downstream không cần phân biệt seed và simulated record.
+
+---
 
 ---
 
@@ -83,12 +109,16 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
+---
+
 ## D-009 — Surrogate primary key for geolocation
 
 **Date:** 29/07/2026  
 **Decision:** Không dùng ZIP/lat/lng làm composite primary key.
 
 **Reason:** Source duplicate và precision rounding có thể vi phạm uniqueness; không có business rule xác nhận natural key.
+
+---
 
 ---
 
@@ -103,12 +133,16 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
+---
+
 ## D-011 — Documentation must evolve with implementation
 
 **Date:** 29/07/2026  
 **Decision:** Mỗi thay đổi phải kết thúc bằng “Docs cần cập nhật” hoặc “Không cần cập nhật docs”.
 
 **Reason:** Ngăn architecture, schema và runbook trở nên lạc hậu.
+
+---
 
 ---
 
@@ -122,20 +156,6 @@ fastorder/db/  → connection.py, init_db.py
 - Bảo vệ dữ liệu gốc tại lớp Bronze để đảm bảo Data Lineage và phục vụ Root Cause Analysis về sau. Pipeline nạp dữ liệu cũng nhờ đó mà nhẹ nhàng và dễ bảo trì hơn.
 ---
 
-## D-013 — Synthetic Sparse Inventory Strategy
-
-**Date:** 30/07/2026  
-**Decision:** Sử dụng chiến lược phân bổ tồn kho thưa (Sparse Inventory) và sinh số lượng ngẫu nhiên có kiểm soát (Fixed Random Seed).  
-**Quy tắc phân bổ:**
-- Mỗi sản phẩm có mặt tại đúng 1 kho chính (Main warehouse: WH_HN hoặc WH_HCM) với số lượng 50–200.
-- Mỗi sản phẩm có mặt tại đúng 1 kho vùng (Regional warehouse: WH_HP, WH_DN, hoặc WH_CT) với số lượng 20–100.
-- 20% xác suất sản phẩm có mặt ở kho thứ ba (trong số các kho còn lại) với số lượng 10–50.
-
-**Reason:** 
-- Tránh việc phân bổ tất cả sản phẩm vào tất cả các kho (Dense Inventory), gây ra sự thiếu thực tế về mặt nghiệp vụ logistics và làm phình to database không cần thiết (chỉ tạo ~72.000 records thay vì ~164.000 records).
-- Việc dùng Fixed Seed (`random.seed(42)`) đảm bảo tính tái lập (reproducibility) khi reset DB, hỗ trợ tốt nhất cho quá trình debug, test và data validation.
-
-```markdown
 ---
 
 ## D-013 — Synthetic Sparse Inventory Strategy
@@ -153,6 +173,8 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
+---
+
 ## D-014 — Faker Simulator: State Machine & Quantity Logic
 
 **Date:** 30/07/2026  
@@ -167,6 +189,8 @@ fastorder/db/  → connection.py, init_db.py
 
 ---
 
+---
+
 ## D-015 — Faker Simulator: Concurrency Control & B2C Limit
 
 **Date:** 30/07/2026  
@@ -177,6 +201,8 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:** 
 - Đảm bảo tính chân thực của dữ liệu mô phỏng.
 - Kỹ thuật Optimistic Locking (kiểm tra rowcount) khóa chặt lỗ hổng Overselling khi chạy nhiều tiến trình Simulator song song, nếu có tranh chấp tài nguyên (race condition), transaction sẽ lập tức Rollback.
+
+---
 
 ## D-016 — Architecture of Simulator Runner
 
@@ -193,6 +219,8 @@ fastorder/db/  → connection.py, init_db.py
 - Nguyên tắc Fail-fast giúp phát hiện ngay lỗi Database/Logic thay vì chạy lặp vô hạn. Graceful shutdown ngăn chặn treo transaction.
 - Independent validator chốt chặn chất lượng dữ liệu cuối phiên đảm bảo dữ liệu sinh ra không vi phạm Data Invariants (12/12 rules PASS).
 
+---
+
 ## D-017 — At-Least-Once Bronze Ingestion & Timestamp-based Extraction
 
 **Date:** 05/08/2026
@@ -207,6 +235,8 @@ fastorder/db/  → connection.py, init_db.py
 *   Medallion Architecture sinh ra là để các lớp san sẻ gánh nặng cho nhau. Bronze có nhiệm vụ lấy dữ liệu nhanh nhất và an toàn nhất (append-only), còn Silver xử lý logic nghiệp vụ (Deduplicate).
 *   Upper Watermark giúp cô lập batch dữ liệu, tránh việc query đuổi theo dữ liệu do Simulator sinh ra liên tục.
 
+---
+
 ## D-018 — Timestamp Honesty & Schema Enforcement for Incremental Extraction
 
 **Date:** 05/08/2026
@@ -220,6 +250,8 @@ fastorder/db/  → connection.py, init_db.py
 *   Giá trị `updated_at = NULL` sẽ vĩnh viễn lọt lưới Incremental Query, nên `NOT NULL` là lá chắn bắt buộc.
 *   Composite Index là thành phần vật lý không thể thiếu để duy trì hiệu năng khi query quét theo watermark ngày càng phình to.
 
+---
+
 ## D-019 — Idempotent Overwrite for Bronze Layer (Extraction ID Reuse)
 
 **Date:** 06/08/2026
@@ -232,6 +264,8 @@ fastorder/db/  → connection.py, init_db.py
 *   Ngăn chặn sự tích tụ của các thư mục/file Parquet rác trong Data Lake khi tiến trình crash giữa bước "Ghi Parquet" và "Commit Checkpoint". 
 *   Dù tầng Silver có năng lực Deduplicate, việc giữ sạch tầng vật lý Bronze ngay từ đầu (giảm thiểu số lượng file trùng lặp) là tiêu chuẩn công nghiệp tốt nhất, giúp giảm tải IO và tránh phải xây dựng các kịch bản dọn rác (Garbage Collection/Vacuum) phức tạp.
 
+---
+
 ## D-020 — Use Pending Batch Context for Stable Crash Recovery
 
 **Date:** 07/08/2026
@@ -243,6 +277,8 @@ fastorder/db/  → connection.py, init_db.py
 * Checkpoint chỉ trả lời câu hỏi "Pipeline đã hoàn thành đến đâu?", nhưng không biết "Tiến trình đang làm dở việc gì?". 
 * Việc không có Pending Context sẽ khiến tiến trình khi restart bị mất `extraction_id` cũ, tự động sinh ID mới và ghi file Parquet mới, dẫn đến rác dữ liệu trên Data Lake hoặc ghi đè sai batch. Pending Context đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) được bảo toàn tuyệt đối xuyên suốt các lần khởi động lại tiến trình.
 
+---
+
 ## D-021 — Áp dụng Stable Retry Context và Fail-Fast cho State Management
 
 **Date:** 2026-08-07
@@ -253,6 +289,8 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 * Đảm bảo ranh giới dữ liệu và danh tính của lần chạy (Stable Run Identity) không bị biến đổi xuyên suốt các lần restart.
 * Việc tự động bỏ qua lỗi của file trạng thái (như file bị rỗng do I/O error) có thể dẫn đến hậu quả nghiêm trọng như kéo lại toàn bộ lịch sử dữ liệu (Disaster Risk) hoặc ghi đè sai batch. Con người phải can thiệp khi State files bị hỏng.
+
+---
 
 ## D-022 — Sử dụng Airflow Context cho Stable Run Identity và Fail-Fast Mount Guards
 
@@ -266,7 +304,11 @@ fastorder/db/  → connection.py, init_db.py
 *   Đảm bảo tính Deterministic của tiến trình khi chạy trên Airflow. `run_id` mặc định của Airflow chứa các ký tự đặc biệt có thể phá hỏng tiến trình ghi file Parquet trên môi trường Windows bind mount.
 *   Bảo vệ Data Pipeline khỏi tình trạng chạy thành công giả (Fake success) khi mount bị lỗi, giúp phát hiện sớm các vấn đề về cơ sở hạ tầng.
 
+---
+
 ## D-023 — Hoàn tất Local Airflow MVP và Tiếp cận ADLS theo hướng Probe-First
+
+**Status:** Historical — completed Azure integration phase; current target superseded by D-043.
 
 **Date:** 2026-08-10
 **Decision:**
@@ -277,6 +319,8 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Việc phân lập hạ tầng (Infrastructure Isolation) giúp tách bạch các lỗi liên quan đến Mạng/Bảo mật (Azure Auth, RBAC) khỏi các lỗi liên quan đến Data Logic (Runner, Airflow DAG). Nếu hệ thống crash, ta biết chính xác nguyên nhân nằm ở Data Layer hay Transport Layer.
 
+---
+
 ## D-024 — Chuyển đổi Timezone trong DAG trước khi sinh Partition
 
 **Date:** 2026-08-11
@@ -286,7 +330,11 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Đảm bảo metadata partitioning trên ADLS (`ingestion_date=YYYY-MM-DD`) đồng nhất tuyệt đối với ngày vận hành kinh doanh (Business Convention) tại Việt Nam. Nếu chỉ gọi `.replace(tzinfo=None)` trên UTC time, dữ liệu của phiên chạy đầu ngày tại VN có thể bị rơi nhầm vào partition của ngày hôm trước do lệch múi giờ.
 
+---
+
 ## D-025 — Cleanup Bronze Root và Giao phó I/O cho ADLS Client
+
+**Status:** Superseded by D-043/D-045 — separation principle remains active; physical client is now S3/MinIO.
 
 **Date:** 2026-08-11
 **Decision:**
@@ -295,7 +343,11 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Loại bỏ dư thừa kỹ thuật (Tech Debt) của giai đoạn Local MVP, đảm bảo kiến trúc tuân thủ nguyên tắc Separation of Concerns. DAG và Runner không cần quan tâm Storage vật lý nằm ở đâu.
 
+---
+
 ## D-026 — Lựa chọn Kiến trúc Cloud-Native File Ingestion và Time-Based Partitioning
+
+**Status:** Superseded by D-043 — ADF/cloud-only transport is no longer current target; time-based file organization remains useful.
 
 **Date:** 2026-08-11
 **Decision:**
@@ -307,7 +359,11 @@ fastorder/db/  → connection.py, init_db.py
 *   Việc dùng máy tính cá nhân làm trạm trung chuyển không có khả năng mở rộng (Scalability) và không phản ánh đúng thực tế doanh nghiệp. ADF là công cụ Managed Service tối ưu nhất để chịu tải tác vụ data movement từ bên ngoài vào Cloud Landing Zone.
 *   Dữ liệu thực tế luôn đến theo cửa sổ thời gian (Time window). Phân vùng dữ liệu theo `event_date` sát với nghiệp vụ hơn, đồng thời tối ưu hóa quá trình đọc dữ liệu của Apache Spark ở các layer sau (Bronze -> Silver).
 
+---
+
 ## D-027 — Phân tách trách nhiệm I/O trong File-based Ingestion
+
+**Status:** Partially superseded by D-043 — responsibility separation remains active; ADF/Databricks-specific mapping is historical.
 
 **Date:** 2026-08-12
 **Decision:**
@@ -316,7 +372,11 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Ngăn chặn Airflow Worker phải chịu tải các tác vụ không phù hợp (giải nén file gigabytes, xử lý 33 triệu rows). Airflow chỉ nên làm Orchestrator. Trả các tác vụ Heavy Compute (Extract, Partitioning) về cho nền tảng Distributed Compute đúng nghĩa là Spark/Databricks.
 
+---
+
 ## D-028 — Xác thực Storage cho Databricks qua Managed Identity
+
+**Status:** Historical Azure security decision — no longer part of current local runtime.
 
 **Date:** 2026-08-12
 **Decision:**
@@ -326,7 +386,11 @@ fastorder/db/  → connection.py, init_db.py
 **Reason:**
 *   Thực hành Security Best Practice theo khuyến nghị của Microsoft và kiến trúc Unity Catalog. Chấm dứt việc nhúng `client_secret` hay `account_key` vào mã nguồn Spark Conf, ngăn ngừa rủi ro rò rỉ credential và giảm chi phí vận hành xoay vòng khóa (key rotation).
 
+---
+
 ## D-029 — YOOCHOOSE Landing Preparation Strategy
+
+**Status:** Partially superseded by D-043 — Landing/source-preservation and daily organization remain active; Azure-specific path is historical.
 
 **Date:** 13/08/2026  
 **Context:** YOOCHOOSE clickstream is distributed as a compressed `yoochoose-data.7z` archive containing approximately 33 million click events. The file-based ingestion flow requires a cloud-native source boundary without relying on the developer's local filesystem.
@@ -368,12 +432,16 @@ Daily organization was selected after profiling the actual dataset:
 - `prepared/` becomes the source boundary for Airflow file-based ingestion.
 - Analytical/Silver partitioning will be decided independently from Landing layout.
 
+---
+
 ## D-030 — File Manifest Storage Strategy for MVP
 
 **Date:** 13/08/2026  
 **Decision:** File Manifest MVP uses shared atomic JSON state; dedicated PostgreSQL metadata store deferred to future scale.
 
 **Reason:** The current source operates at a scale of a few hundred physical files, and the Airflow File DAG will execute as a single active run. The `state/` directory is already a persistent shared volume, and the atomic JSON pattern from the Database Ingestion MVP can be directly reused. This fulfills the MVP requirement without introducing additional Azure or Database infrastructure complexities at this stage.
+
+---
 
 ## D-031 — File-Based Bronze Writer Architecture and Runner Observability
 
@@ -387,6 +455,7 @@ Daily organization was selected after profiling the actual dataset:
 
 **Reason:** Preserving the `discovered_at` timestamp ensures that retries maintain the exact same ingestion ID and logical time, guaranteeing deterministic output paths and idempotent overwrites in Bronze. Differentiating between `retried` (an attempt state) and `processed` (a success state) provides clear operational visibility for Airflow logs.
 
+---
 
 ## D-032 — Airflow Orchestration for File-Based Ingestion
 
@@ -407,6 +476,8 @@ Proceed to Airflow orchestration by creating a DAG that directly calls `run_file
 - The local integration testing phase is complete and cleaned up.
 - The next step focuses entirely on Airflow DAG development and containerized execution.
 
+---
+
 ## D-033 — Weather API Sourcing Strategy (Forecast vs. Historical)
 
 **Date:** 16/08/2026  
@@ -423,6 +494,8 @@ Proceed to Airflow orchestration by creating a DAG that directly calls `run_file
 - The Weather API Client will be designed to support both current and historical forecast endpoints using a shared data contract.
 - The platform gains immediate analytical utility from the backfilled weather data, avoiding the "cold start" problem of waiting months for forecast data to accumulate.
 
+---
+
 ## D-034 — Weather API Bronze Storage Strategy (Sidecar Pattern)
 
 **Date:** 16/08/2026  
@@ -436,6 +509,8 @@ API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`
 **Consequences:** 
 - Each API ingestion unit corresponds to a specific directory structure: `bronze/weather/open_meteo/forecast/ingestion_date=.../warehouse_id=.../ingestion_id=.../`.
 - The Weather API Client will return pure Python dictionaries (parsed JSON) instead of Pandas DataFrames.
+
+---
 
 ## D-035 — Tính lũy đẳng (Idempotency) của API Ingestion và Chiến lược Retry 2 tầng
 
@@ -452,6 +527,8 @@ API Bronze preserves Open-Meteo responses as raw JSON snapshots (`response.json`
 **Consequences:** 
 - Tích hợp end-to-end thành công với khả năng phục hồi cục bộ (ví dụ: phục hồi sau crash bằng cách skip 4 kho hàng đã commit và ingest chính xác 1 kho còn lại).
 
+---
+
 ## D-036 — Historical Forecast Backfill Strategy
 
 **Date:** 16/08/2026  
@@ -466,7 +543,11 @@ Forecast ongoing = 48h future window, incremental periodic.
 - Avoid overlapping rolling 90-day backfills (ngăn chặn việc backfill trôi dạt theo ngày chạy thực tế).
 - Deterministic replay (đảm bảo tính tất định khi Airflow chạy lại các khoảng thời gian trong quá khứ).
 
+---
+
 ## D-037 — Thiết kế xử lý Silver Weather Forecast
+
+**Status:** Superseded by D-039 final Forecast Silver design.
 
 **Date:** 20/08/2026  
 
@@ -493,8 +574,11 @@ Thiết kế này ngăn chặn việc xây dựng một notebook khổng lồ ô
 - Hỗ trợ tốt xử lý incremental.
 - Tạo ra các Silver pipelines an toàn khi chạy lại (retry-safe).
 
+---
 
 ## D-038 — Thiết kế Data Quality và Transformation cho Silver Weather Forecast
+
+**Status:** Superseded by D-039 final Forecast Silver design.
 
 **Date:** 22/08/2026
 
@@ -536,7 +620,11 @@ Pipeline hiện tại kiểm tra:
 
 Các bài kiểm tra Data Quality không tự động làm sạch hay sửa đổi các bản ghi không hợp lệ. Nếu bất kỳ chỉ số Data Quality trọng yếu nào lớn hơn 0, pipeline sẽ thất bại trước khi ghi xuống Silver.
 
+---
+
 ## D-039 — Thiết kế Xử lý Silver Weather Forecast
+
+**Status:** Active logical design; physical runtime port to MinIO/local Spark is pending.
 
 **Date:** 22/08/2026
 
@@ -598,9 +686,11 @@ Hai Databricks notebooks mang hai trách nhiệm riêng biệt:
 - `weather_forecast_silver_pipeline`: Dành cho thực thi End-to-End, phát hiện pending data, xử lý NO_OP và ghi dữ liệu Silver.
 Sự phân tách này ngăn việc notebook phát triển trở thành entry point cho production pipeline.
 
-
+---
 
 ## D-040 — Weather History Silver Processing Design
+
+**Status:** Active logical design; physical runtime port to MinIO/local Spark is pending.
 
 **Date:** 29/08/2026
 
@@ -768,6 +858,8 @@ pipeline trả:
 
 và không thực hiện Transformation, Data Quality, Validation hoặc Silver Write.
 
+---
+
 ## D-041 — Generic PostgreSQL Incremental Ingestion Framework
 
 **Date:** 30/08/2026
@@ -793,9 +885,9 @@ Framework hỗ trợ khai báo Composite Primary Key.
 
 Giữ nguyên crash-recovery protocol và flat checkpoint format đã được chứng minh.
 
+---
 
-
-## D-041 — DAG Factory cho Operational Tables Ingestion
+## D-042 — DAG Factory cho Operational Tables Ingestion
 
 **Date:** 30/08/2026
 ### Bối cảnh
@@ -812,3 +904,171 @@ Sử dụng pattern DAG Factory để tạo tự động một DAG độc lập 
 Một vòng lặp Python sẽ đọc danh sách cấu hình bảng (bao gồm tên bảng, cursor config) và gọi hàm sinh DAG.
 Mỗi bảng được cấp một DAG ID riêng biệt.
 Luồng điều phối (orchestration logic) được tập trung tại một nơi duy nhất, đảm bảo tính DRY (Don't Repeat Yourself).
+
+---
+
+## D-043 — Local-First Development Stack (Azure -> MinIO / Local Compute)
+
+### Context
+Tài khoản Azure student credits đã cạn kiệt, dẫn đến việc không thể tiếp tục sử dụng ADLS và Databricks compute. Dự án cần duy trì khả năng tái tạo (reproducible) liền mạch mà không phụ thuộc vào các tài nguyên cloud trả phí.
+
+### Decision
+Chuyển đổi toàn bộ kiến trúc phát triển sang một local-first stack hoàn toàn miễn phí (zero-cost).
+
+**Giai đoạn chuyển đổi ban đầu:**
+- Azure Data Lake Storage → MinIO.
+- Azure-specific Python storage client → boto3 S3-compatible client.
+- Giữ nguyên các logic incremental ingestion hiện tại.
+- Giữ nguyên thiết kế checkpoint và pending recovery.
+- Giữ nguyên Bronze path contract.
+
+**Giai đoạn chuyển đổi tương lai:**
+- Databricks → Local Spark / PySpark.
+- Synapse/DWH target → ClickHouse.
+- dbt Core.
+- Power BI Desktop.
+
+### Validation
+
+Operational PostgreSQL migration đã được chứng nhận hoàn tất trên MinIO:
+
+`PostgreSQL -> Generic Incremental Runner -> PyArrow Parquet -> boto3 -> MinIO Bronze`
+
+Kết quả:
+
+- 11/11 operational tables PASS E2E reconciliation.
+- Orders certification: 99,492 source rows = 99,492 distinct Bronze PK, 20 production Parquet files.
+- Orders replay trả `NO_OP` khi source không đổi.
+- Checkpoint khớp source upper watermark; pending context sạch.
+- Production Parquet dùng `timestamp[us]`; không phát hiện `TIMESTAMP(NANOS)`.
+- Framework đã PASS cả single PK, composite PK và bảng lớn `geolocation` (>1 triệu rows).
+
+### Consequences
+
+**Tích cực:**
+- Không còn phụ thuộc vào cloud trả phí cho môi trường phát triển.
+- Tận dụng được các đặc tính của S3-compatible object storage.
+- Bảo toàn trọn vẹn ingestion framework đã cất công xây dựng.
+- Môi trường dễ dàng tái tạo (reproducible) hoàn toàn trên local.
+
+**Đánh đổi (Trade-offs):**
+- Triển khai MinIO local không hoàn toàn tương đương với managed cloud storage thực tế.
+- Trạng thái cục bộ (local state) bị buộc chặt vào môi trường development.
+- Các yếu tố HA (High Availability) và Security chuẩn production nằm ngoài phạm vi hiện tại của dự án.
+
+---
+
+## D-044 — Operational Bronze Certification Requires Data Reconciliation
+
+**Date:** 31/08/2026  
+**Status:** Active
+
+**Decision:** Airflow task success, checkpoint advancement hoặc file existence **không đủ** để chứng nhận một operational pipeline. Certification phải đối chiếu tối thiểu:
+
+- source row count;
+- Bronze distinct business PK coverage;
+- checkpoint == source upper watermark;
+- pending context absent;
+- Bronze max cursor reaches source upper;
+- path/metadata contract;
+- representative physical Parquet schema;
+- replay behavior khi source không đổi.
+
+**Reason:** Control-plane success có thể tồn tại cùng data-plane corruption hoặc thiếu dữ liệu. Sự cố Orders legacy artifacts đã chứng minh cần E2E reconciliation độc lập.
+
+---
+
+## D-045 — MinIO Uses S3-Compatible boto3 Client and Layer Buckets
+
+**Date:** 31/08/2026  
+**Status:** Active
+
+**Decision:**
+
+- Dùng `boto3` với S3-compatible API thay vì MinIO-specific SDK.
+- MinIO buckets: `landing`, `bronze`, `silver`, `gold`.
+- `landing` chủ yếu dành cho file source boundary; Operational DB và API có thể ghi thẳng Bronze.
+- Deterministic object key được giữ để retry overwrite đúng logical ingestion unit.
+
+**Reason:** Giảm vendor coupling, vẫn giữ object-storage semantics và làm local environment gần data-lake architecture hơn local filesystem thuần.
+
+---
+
+## D-046 — Local Analytics Target: Spark + Delta + ClickHouse + dbt Core
+
+**Date:** 31/08/2026  
+**Status:** Target / not yet implemented
+
+**Decision:** Sau khi các ingestion flow được migrate sang MinIO:
+
+`MinIO Bronze -> Local Spark/PySpark + Delta Lake OSS -> ClickHouse -> dbt Core -> Power BI Desktop`
+
+**Reason:** Giữ được separation giữa file-based heavy processing và OLAP warehouse, không cần paid cloud services. ClickHouse được chọn làm server OLAP/DWH thay vì dùng PostgreSQL làm warehouse; DuckDB vẫn có thể dùng như công cụ local phụ trợ nhưng không phải warehouse chính.
+
+---
+
+## D-043 — Base-First V1 Platform Strategy
+
+**Date:** 01/09/2026
+
+### Context
+
+FastOrder đã tích lũy nhiều thiết kế nâng cao trong quá trình phát triển, nhưng việc tiếp tục bổ sung công nghệ trước khi platform cơ bản chạy End-to-End làm tăng độ phức tạp và giảm khả năng hiểu rõ lý do tồn tại của từng technology.
+
+### Decision
+
+FastOrder áp dụng chiến lược:
+
+`Simplest structurally correct V1 → E2E → observe limitations → deliberate upgrade`
+
+V1 giữ ba ingestion flows:
+
+- Operational PostgreSQL;
+- YOOCHOOSE File;
+- Open-Meteo API.
+
+V1 analytical stack:
+
+`MinIO → Spark/Delta → PostgreSQL DWH → dbt Core → Power BI`
+
+PostgreSQL DWH phải tách biệt với PostgreSQL OLTP.
+
+ClickHouse được chuyển sang V2 backlog.
+
+### Reason
+
+Mục tiêu của project không phải sử dụng càng nhiều technology càng tốt mà là hiểu được vấn đề mà từng technology giải quyết.
+
+Việc bắt đầu bằng PostgreSQL DWH giúp hoàn thiện platform nhanh hơn và tạo baseline thực tế để sau này so sánh với ClickHouse.
+
+### Upgrade Rule
+
+Mỗi V2 upgrade phải trả lời:
+
+1. V1 đang gặp giới hạn gì?
+2. Vì sao giới hạn đó xảy ra?
+3. Technology/design mới giải quyết giới hạn đó như thế nào?
+
+---
+
+## D-044 — YOOCHOOSE V1 Manual Delivery and MinIO Landing Boundary
+
+**Date:** 01/09/2026
+
+### Context
+
+Sau khi chuyển khỏi Azure, pipeline YOOCHOOSE cần một source-delivery mechanism đơn giản để hoàn thiện V1 mà không phải xây thêm HTTP/SFTP ingestion infrastructure.
+
+### Decision
+
+V1 coi việc manual download YOOCHOOSE archive vào local filesystem như một lần external provider delivery.
+
+Flow:
+
+```text
+External Provider
+→ Local Raw
+→ Validation / Temporary Preparation
+→ MinIO Landing
+→ Airflow File Ingestion
+→ MinIO Bronze

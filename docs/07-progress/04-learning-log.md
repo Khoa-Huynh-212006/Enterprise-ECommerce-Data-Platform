@@ -1,4 +1,10 @@
-## 07/08/2026 - Crash Recovery & State Management In Data Pipelines
+# Learning Log — FastOrder Data Engineering
+
+> Đây là **learning history**, không phải current architecture specification. Các entry Azure/Databricks được giữ nguyên theo bối cảnh lúc học. Khi một công nghệ đã bị supersede, kiến thức nguyên lý vẫn hữu ích nhưng current stack phải đọc từ `02-current-status.md` và Physical Architecture.
+
+---
+
+## 07/08/2026 - Crash Recovery & State Management in Data Pipelines
 
 **1. Ranh giới giữa Checkpoint và Pending Context**
 Trong thiết kế Data Pipeline, Checkpoint đóng vai trò là "Nguồn sự thật" (Source of Truth) cho những dữ liệu đã được xác nhận an toàn. Trong khi đó, Pending Context đóng vai trò là "Bộ nhớ ngắn hạn" lưu lại ý định thực thi. Phải có cả hai mới giải quyết được bài toán Crash Recovery mà không tạo ra bản ghi nhân bản (duplicates).
@@ -9,7 +15,7 @@ Cơ chế Atomic Write (`os.replace`) kết hợp với việc tái sử dụng 
 **3. Phân tích Failure Windows (Cửa sổ rủi ro)**
 Không thể test hệ thống bằng cách chỉ cho nó chạy thành công. Phải dùng `unittest.mock` để chủ động cắt đứt tiến trình (raise Exceptions) tại các vị trí nhạy cảm nhất (giữa các thao tác I/O). Việc chia nhỏ thứ tự thực thi thành 5 bước độc lập cho phép cô lập lỗi và xử lý triệt để mọi trường hợp mất điện hay tắt nguồn máy chủ.
 
-## 2026-08-07 - Stable Boundary, Fail-Fast và Crash Recovery
+## 07/08/2026 - Stable Boundary, Fail-Fast và Crash Recovery
 
 **1. Stable Boundary và Run Identity**
 Khi phục hồi từ một sự cố, tiến trình không được phép tự do lấy cấu hình mới (như `batch_size` mới hay `run_upper_watermark` mới từ DB). Nó phải tuyệt đối trung thành với bối cảnh đã lưu trong `Pending Context`. Việc này đảm bảo tính vẹn toàn của dữ liệu, không tạo ra khoảng trống hoặc sự trùng lặp.
@@ -167,7 +173,7 @@ Việc không có ingestion chờ xử lý (pending) không phải là lỗi. Kh
 Logic transformation dành cho môi trường production phải nằm ở các module Python tái sử dụng. Các development notebooks chỉ nên dùng để: tài liệu hóa, khám phá dữ liệu, debug, và kiểm tra kết quả trung gian. Một runner notebook nhỏ (thin runner) sẽ được dùng riêng cho việc thực thi End-to-End. Việc này giúp luồng làm việc dễ hiểu và không trói buộc quá trình chạy production vào state tĩnh của notebook cell.
 
 
-## Weather History Silver — Learning Notes
+## 29/08/2026 - Weather History Silver
 
 ### Business Grain khác Ingestion Grain
 
@@ -300,7 +306,7 @@ Nếu tập Pending rỗng:
 Pipeline không tiếp tục load hoặc transform dữ liệu.
 
 
-## PostgreSQL Generic Ingestion — Learning Notes
+## 30/08/2026 - PostgreSQL Generic Ingestion
 
 ### Tại sao Timestamp-only Watermark không đủ?
 
@@ -336,7 +342,7 @@ Trạng thái PENDING cho phép framework nhận diện chính xác điểm cras
 resume đúng state mà không cần truy vấn lại hệ thống nguồn từ đầu.
 
 
-## Airflow DAG Factory — Learning Notes
+## 30/08/2026 - Airflow DAG Factory
 
 ### Factory Pattern
 
@@ -354,13 +360,13 @@ Nếu không, Scheduler sẽ bị nghẽn (parse timeout). Mọi thao tác xử 
 Dù chia sẻ cùng một code base từ Factory, mỗi bảng bắt buộc phải vận hành trên một DAG riêng và sở hữu checkpoint độc lập.
 Tính cô lập (isolation) đảm bảo: một lỗi ingestion hoặc downtime ở bảng này không làm sập tiến trình của các bảng khác, và mỗi bảng có thể replay/backfill an toàn.
 
-## PostgreSQL Generic Ingestion — Wave 2 Learning Notes
+## 30/08/2026 - Composite-PK Operational Ingestion
 
 ### Composite Watermark với Mixed PK Types
 
 Cấu trúc cursor `(updated_at, *primary_key_columns)` hoạt động ổn định kể cả khi các bảng có kiểu dữ liệu Primary Key hỗn hợp (mixed PK types) hoặc sử dụng composite keys phức tạp. Việc unpack `*primary_key_columns` vào cursor giúp framework tự động thích ứng với định dạng định danh của từng bảng mà không cần hardcode logic phân giải (tie-breaker) riêng biệt.
 
-## Operational PostgreSQL Bronze — Learning Notes
+## 30/08/2026 - Operational PostgreSQL Bronze Validation
 
 ### Airflow Success != Data Correctness
 
@@ -374,3 +380,39 @@ Cần phân biệt rõ trạng thái của luồng điều phối (Control Plane
 
 Để khẳng định dữ liệu toàn vẹn, bắt buộc phải thực hiện đối soát End-to-End (E2E reconciliation) tạo thành một vòng khép kín:
 `Source ↔ Checkpoint ↔ Bronze`
+
+---
+
+## 31/08/2026 - Local-First Storage Migration
+
+### 1. Infrastructure migration không đồng nghĩa rewrite pipeline
+
+Khi đổi ADLS -> MinIO, phần đúng cần giữ là extraction semantics, checkpoint, pending context, deterministic ingestion identity và schema contract. Chỉ storage boundary được thay trước; không viết lại framework chỉ vì đổi hạ tầng.
+
+### 2. S3-compatible object storage không có folder thật
+
+MinIO/S3 lưu object theo `Bucket + Key`. Cấu trúc `orders/ingestion_date=.../extraction_id=.../part-000.parquet` là prefix convention, không phải directory hierarchy thực như local filesystem.
+
+### 3. Probe nhỏ trước E2E lớn
+
+Migration được kiểm theo tầng: MinIO container -> buckets -> boto3 client -> writer schema -> real object write/read/retry -> runner integration -> Orders E2E -> 11-table certification. Cách này cô lập lỗi tốt hơn việc thay toàn bộ stack cùng lúc.
+
+### 4. Control Plane != Data Plane
+
+Checkpoint có thể ở source upper trong khi storage mới hoàn toàn rỗng. Vì vậy khi đổi storage backend, phải kiểm cả control state và data state trước khi chạy. Orders được re-bootstrap có kiểm soát chính vì lý do này.
+
+### 5. Airflow Green != Data Correctness
+
+Certification cần đối chiếu source count, distinct business PK, source upper/checkpoint, pending state, Bronze max cursor và physical schema. Task success chỉ chứng minh orchestration kết thúc, không chứng minh data đủ và đúng.
+
+### 6. Explicit Parquet schema quan trọng hơn inference
+
+PyArrow explicit schema giữ all-null field đúng kiểu và khóa timestamp ở microseconds. Điều này loại bỏ lỗi `TIMESTAMP(NANOS)` từng làm Spark không đọc được Bronze Parquet.
+
+### 7. Retry identity phải ổn định qua storage backend
+
+Cùng `extraction_id` phải tạo cùng object key. Khi retry, MinIO ghi lại đúng key đó thay vì sinh object mới; idempotency vì vậy được giữ dù backend đã đổi.
+
+### 8. Migration chỉ được coi là xong khi recertify
+
+Operational migration không dừng ở Orders. Framework được recertify trên single PK, composite PK và bảng lớn; cuối cùng full validator đạt 11/11.

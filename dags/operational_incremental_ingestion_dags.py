@@ -145,7 +145,7 @@ def build_incremental_table_dag(
             print(
                 "Bắt đầu incremental "
                 f"{table_name} ingestion "
-                "task (ADLS Bronze)"
+                "task (MinIO Bronze)"
             )
 
             print(

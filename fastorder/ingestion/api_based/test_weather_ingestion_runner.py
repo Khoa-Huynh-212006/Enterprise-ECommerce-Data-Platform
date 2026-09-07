@@ -1,8 +1,9 @@
 from datetime import datetime, timezone
 from unittest.mock import patch
+from uuid import uuid4
 
-from fastorder.storage.adls_client import (
-    get_adls_service_client,
+from fastorder.storage.minio_client import (
+    get_minio_client,
 )
 
 from fastorder.ingestion.api_based.weather_api_client import (
@@ -10,6 +11,7 @@ from fastorder.ingestion.api_based.weather_api_client import (
 )
 
 from fastorder.ingestion.api_based.weather_bronze_writer import (
+    BRONZE_BUCKET,
     build_weather_ingestion_root,
 )
 
@@ -22,14 +24,63 @@ from fastorder.ingestion.api_based.weather_ingestion_runner import (
 )
 
 
-# =========================================================
+
+# HELPERS
+
+
+def list_objects_under_prefix(
+    minio_client,
+    prefix: str,
+) -> set[str]:
+
+    response = minio_client.list_objects_v2(
+        Bucket=BRONZE_BUCKET,
+        Prefix=prefix,
+    )
+
+    return {
+        item["Key"]
+        for item in response.get(
+            "Contents",
+            [],
+        )
+    }
+
+
+def cleanup_prefix(
+    minio_client,
+    prefix: str,
+) -> None:
+
+    object_keys = list_objects_under_prefix(
+        minio_client,
+        prefix,
+    )
+
+    for object_key in object_keys:
+
+        minio_client.delete_object(
+            Bucket=BRONZE_BUCKET,
+            Key=object_key,
+        )
+
+        print(
+            f"[CLEANUP] Deleted: "
+            f"{object_key}"
+        )
+
+
+
 # TEST CONTEXT
-# =========================================================
+
 
 TEST_WAREHOUSE_ID = "WH_HCM"
 
+TEST_RUN_SUFFIX = uuid4().hex[:8]
+
 TEST_RUN_ID = (
-    "test_weather_ingestion_runner_001"
+    f"test_weather_ingestion_runner_"
+    f"{TEST_RUN_SUFFIX}"
 )
 
 TEST_LOGICAL_AT = datetime(
@@ -45,9 +96,9 @@ TEST_LATITUDE = 10.82
 TEST_LONGITUDE = 106.63
 
 
-# =========================================================
+
 # FAKE OPEN-METEO RESULT
-# =========================================================
+
 
 fake_payload = {
     "latitude": 10.790861,
@@ -118,9 +169,9 @@ fake_result = WeatherApiResult(
 )
 
 
-# =========================================================
+
 # BUILD EXPECTED IDENTITY
-# =========================================================
+
 
 expected_ingestion_id = (
     build_weather_ingestion_id(
@@ -141,6 +192,11 @@ expected_ingestion_root = (
 )
 
 
+expected_prefix = (
+    expected_ingestion_root + "/"
+)
+
+
 print(
     "Expected ingestion ID:",
     expected_ingestion_id,
@@ -152,36 +208,25 @@ print(
 )
 
 
-# =========================================================
-# CONNECT REAL ADLS BRONZE
-# =========================================================
 
-service_client = get_adls_service_client()
+# CONNECT REAL MINIO BRONZE
 
-bronze_client = (
-    service_client.get_file_system_client(
-        "bronze"
-    )
+
+minio_client = get_minio_client()
+
+
+
+# CLEANUP OLD TEST ARTIFACT
+
+
+cleanup_prefix(
+    minio_client,
+    expected_prefix,
 )
 
 
-# =========================================================
-# CLEANUP OLD TEST ARTIFACT
-# =========================================================
-
 try:
-    bronze_client.delete_directory(
-        expected_ingestion_root
-    )
-except Exception:
-    pass
-
-
-try:
-
-    # =====================================================
     # MOCK fetch_forecast
-    # =====================================================
 
     with patch(
         (
@@ -192,16 +237,16 @@ try:
     ) as mock_fetch:
 
 
-        # =================================================
+        
         # TEST 1: FIRST RUN MUST COMMIT
-        # =================================================
+        
 
         print(
             "\n========== RUN #1 =========="
         )
 
         result_1 = run_forecast_ingestion(
-            bronze_client=bronze_client,
+            minio_client=minio_client,
 
             warehouse_id=TEST_WAREHOUSE_ID,
             latitude=TEST_LATITUDE,
@@ -238,7 +283,10 @@ try:
         )
 
 
-        assert result_1.status == "committed"
+        assert (
+            result_1.status
+            == "committed"
+        )
 
         assert (
             result_1.warehouse_id
@@ -280,31 +328,19 @@ try:
         )
 
 
-        # =================================================
-        # VERIFY BRONZE FILES
-        # =================================================
+        
+        # VERIFY BRONZE OBJECTS
+        
 
-        paths_after_run_1 = list(
-            bronze_client.get_paths(
-                path=expected_ingestion_root,
-                recursive=True,
+        object_keys_after_run_1 = (
+            list_objects_under_prefix(
+                minio_client,
+                expected_prefix,
             )
         )
 
-        files_after_run_1 = [
-            path
-            for path in paths_after_run_1
-            if not path.is_directory
-        ]
 
-
-        file_names_after_run_1 = {
-            path.name
-            for path in files_after_run_1
-        }
-
-
-        expected_files = {
+        expected_objects = {
             (
                 f"{expected_ingestion_root}/"
                 "response.json"
@@ -320,11 +356,14 @@ try:
         }
 
 
-        assert len(files_after_run_1) == 3
+        assert (
+            len(object_keys_after_run_1)
+            == 3
+        )
 
         assert (
-            file_names_after_run_1
-            == expected_files
+            object_keys_after_run_1
+            == expected_objects
         )
 
 
@@ -333,16 +372,16 @@ try:
         )
 
 
-        # =================================================
+        
         # TEST 2: SAME LOGICAL RUN MUST SKIP
-        # =================================================
+        
 
         print(
             "\n========== RUN #2 =========="
         )
 
         result_2 = run_forecast_ingestion(
-            bronze_client=bronze_client,
+            minio_client=minio_client,
 
             warehouse_id=TEST_WAREHOUSE_ID,
             latitude=TEST_LATITUDE,
@@ -359,7 +398,10 @@ try:
         )
 
 
-        assert result_2.status == "skipped"
+        assert (
+            result_2.status
+            == "skipped"
+        )
 
         assert (
             result_2.ingestion_id
@@ -371,9 +413,15 @@ try:
             == expected_ingestion_root
         )
 
-        assert result_2.response_path is None
+        assert (
+            result_2.response_path
+            is None
+        )
 
-        assert result_2.metadata_path is None
+        assert (
+            result_2.metadata_path
+            is None
+        )
 
         assert result_2.success_path == (
             f"{expected_ingestion_root}/"
@@ -381,12 +429,14 @@ try:
         )
 
 
-        # =================================================
-        # QUAN TRỌNG:
+        
         # Run #2 KHÔNG được gọi API lại
-        # =================================================
+        
 
-        assert mock_fetch.call_count == 1
+        assert (
+            mock_fetch.call_count
+            == 1
+        )
 
 
         print(
@@ -394,35 +444,26 @@ try:
         )
 
 
-        # =================================================
-        # VERIFY KHÔNG SINH THÊM FILE
-        # =================================================
+        
+        # VERIFY KHÔNG SINH THÊM OBJECT
+        
 
-        paths_after_run_2 = list(
-            bronze_client.get_paths(
-                path=expected_ingestion_root,
-                recursive=True,
+        object_keys_after_run_2 = (
+            list_objects_under_prefix(
+                minio_client,
+                expected_prefix,
             )
         )
 
-        files_after_run_2 = [
-            path
-            for path in paths_after_run_2
-            if not path.is_directory
-        ]
-
-
-        file_names_after_run_2 = {
-            path.name
-            for path in files_after_run_2
-        }
-
-
-        assert len(files_after_run_2) == 3
 
         assert (
-            file_names_after_run_2
-            == expected_files
+            len(object_keys_after_run_2)
+            == 3
+        )
+
+        assert (
+            object_keys_after_run_2
+            == expected_objects
         )
 
 
@@ -432,28 +473,19 @@ try:
 
 
     print(
-        "\nWeather ingestion runner test: PASS"
+        "\n"
+        "WEATHER INGESTION RUNNER "
+        "MINIO INTEGRATION: PASS"
     )
 
 
 finally:
 
-    # =====================================================
-    # CLEANUP
-    # =====================================================
+    cleanup_prefix(
+        minio_client,
+        expected_prefix,
+    )
 
-    try:
-        bronze_client.delete_directory(
-            expected_ingestion_root
-        )
-
-        print(
-            "Test Bronze cleanup: PASS"
-        )
-
-    except Exception as error:
-
-        print(
-            "WARNING: cleanup failed:",
-            error,
-        )
+    print(
+        "Test Bronze cleanup: PASS"
+    )

@@ -394,7 +394,94 @@ services:
 
     restart: always
 
+  # Initialize FastOrder data-lake buckets
+  minio-init:
+    image: minio/mc:RELEASE.2025-08-13T08-35-41Z
+
+    depends_on:
+      - minio
+
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+
+    entrypoint: /bin/sh
+
+    command:
+      - -c
+      - |
+        echo "Waiting for MinIO..."
+
+        until mc alias set fastorder http://minio:9000 \
+          "$${MINIO_ROOT_USER}" \
+          "$${MINIO_ROOT_PASSWORD}"
+        do
+          sleep 2
+        done
+
+        echo "Creating FastOrder data-lake buckets..."
+
+        mc mb --ignore-existing fastorder/landing 
+        mc mb --ignore-existing fastorder/bronze
+        mc mb --ignore-existing fastorder/silver
+        mc mb --ignore-existing fastorder/gold
+
+        echo "FastOrder MinIO initialization complete."
+
+        mc ls fastorder
+
+  # FastOrder local Spark processing runtime
+  spark:
+    image: apache/spark:3.5.9-scala2.12-java17-python3-ubuntu
+
+    entrypoint:
+      - /bin/bash
+      - -c
+
+    command:
+      - sleep infinity
+
+    environment:
+      PYTHONPATH: /opt/fastorder-project
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+      MINIO_ENDPOINT: ${MINIO_ENDPOINT}
+      DWH_DB_HOST: ${DWH_DB_HOST}
+      DWH_DB_PORT: ${DWH_DB_PORT}
+      DWH_DB_NAME: ${DWH_DB_NAME}
+      DWH_DB_USER: ${DWH_DB_USER}
+      DWH_DB_PASSWORD: ${DWH_DB_PASSWORD}
+
+    volumes:
+      - ${AIRFLOW_PROJ_DIR:-..}/fastorder:/opt/fastorder-project/fastorder
+      - spark-ivy-cache:/opt/spark/ivy
+
+    depends_on:
+      minio:
+        condition: service_healthy
+
+    restart: unless-stopped
+
+  postgres-dwh:
+    image: postgres:16
+    environment:
+      POSTGRES_DB: fastorder_dwh
+      POSTGRES_USER: fastorder_dwh
+      POSTGRES_PASSWORD: ${DWH_DB_PASSWORD}
+    ports:
+      - "5434:5432"
+    volumes:
+      - postgres-dwh-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U fastorder_dwh -d fastorder_dwh"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
 volumes:
   postgres-db-volume:
   fastorder-db-volume:
   minio-data-volume:
+  spark-ivy-cache:
+  postgres-dwh-data:

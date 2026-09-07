@@ -1,9 +1,10 @@
 import json
 
 from datetime import datetime, timezone
+from uuid import uuid4
 
-from fastorder.storage.adls_client import (
-    get_adls_service_client,
+from fastorder.storage.minio_client import (
+    get_minio_client,
 )
 
 from fastorder.ingestion.api_based.weather_api_client import (
@@ -15,12 +16,15 @@ from fastorder.ingestion.api_based.weather_ingestion_metadata import (
 )
 
 from fastorder.ingestion.api_based.weather_bronze_writer import (
+    BRONZE_BUCKET,
     write_weather_to_bronze,
 )
 
 
+TEST_RUN_ID = uuid4().hex[:8]
+
 TEST_INGESTION_ID = (
-    "test_weather_bronze_writer_001"
+    f"test-weather-bronze-writer-{TEST_RUN_ID}"
 )
 
 TEST_REQUESTED_AT = datetime(
@@ -101,6 +105,7 @@ fake_result = WeatherApiResult(
     },
 )
 
+
 metadata = build_weather_ingestion_metadata(
     api_type="forecast",
     warehouse_id="WH_HCM",
@@ -114,32 +119,58 @@ metadata = build_weather_ingestion_metadata(
     api_result=fake_result,
 )
 
-service_client = get_adls_service_client()
 
-bronze_client = (
-    service_client.get_file_system_client(
-        "bronze"
+def read_json_object(
+    minio_client,
+    object_key: str,
+) -> dict:
+
+    response = minio_client.get_object(
+        Bucket=BRONZE_BUCKET,
+        Key=object_key,
     )
-)
 
-response_path, metadata_path = (
-    write_weather_to_bronze(
-        bronze_client=bronze_client,
-        api_result=fake_result,
-        metadata=metadata,
+    body = response["Body"]
+
+    try:
+        object_bytes = body.read()
+    finally:
+        body.close()
+
+    return json.loads(
+        object_bytes.decode("utf-8")
     )
-)
 
 
-print(
-    "Response path:",
-    response_path,
-)
+def cleanup_prefix(
+    minio_client,
+    prefix: str,
+) -> None:
 
-print(
-    "Metadata path:",
-    metadata_path,
-)
+    response = minio_client.list_objects_v2(
+        Bucket=BRONZE_BUCKET,
+        Prefix=prefix,
+    )
+
+    for item in response.get(
+        "Contents",
+        [],
+    ):
+        object_key = item["Key"]
+
+        minio_client.delete_object(
+            Bucket=BRONZE_BUCKET,
+            Key=object_key,
+        )
+
+        print(
+            f"[CLEANUP] Deleted: "
+            f"{object_key}"
+        )
+
+
+minio_client = get_minio_client()
+
 
 expected_root = (
     "weather/open_meteo/"
@@ -149,126 +180,173 @@ expected_root = (
     f"ingestion_id={TEST_INGESTION_ID}"
 )
 
-
-assert response_path == (
-    f"{expected_root}/response.json"
+expected_prefix = (
+    expected_root + "/"
 )
 
-assert metadata_path == (
-    f"{expected_root}/metadata.json"
-)
 
-response_bytes = (
-    bronze_client
-    .get_file_client(response_path)
-    .download_file()
-    .readall()
-)
+try:
 
-stored_response = json.loads(
-    response_bytes.decode("utf-8")
-)
-
-assert stored_response == fake_payload
-
-metadata_bytes = (
-    bronze_client
-    .get_file_client(metadata_path)
-    .download_file()
-    .readall()
-)
-
-stored_metadata = json.loads(
-    metadata_bytes.decode("utf-8")
-)
-
-assert stored_metadata["version"] == 1
-
-assert (
-    stored_metadata["source_name"]
-    == "open_meteo"
-)
-
-assert (
-    stored_metadata["api_type"]
-    == "forecast"
-)
-
-assert (
-    stored_metadata["warehouse_id"]
-    == "WH_HCM"
-)
-
-assert (
-    stored_metadata["ingestion_id"]
-    == TEST_INGESTION_ID
-)
-
-assert (
-    stored_metadata["requested_latitude"]
-    == 10.82
-)
-
-assert (
-    stored_metadata["requested_longitude"]
-    == 106.63
-)
-
-assert (
-    stored_metadata["response_latitude"]
-    == 10.790861
-)
-
-assert (
-    stored_metadata["response_longitude"]
-    == 106.6313
-)
-
-assert stored_metadata["http_status"] == 200
-assert (
-    stored_metadata["requested_at"]
-    == TEST_REQUESTED_AT.isoformat()
-)
-
-retry_response_path, retry_metadata_path = (
-    write_weather_to_bronze(
-        bronze_client=bronze_client,
-        api_result=fake_result,
-        metadata=metadata,
+    response_path, metadata_path = (
+        write_weather_to_bronze(
+            minio_client=minio_client,
+            api_result=fake_result,
+            metadata=metadata,
+        )
     )
-)
 
-assert retry_response_path == response_path
-
-assert retry_metadata_path == metadata_path
-
-paths = list(
-    bronze_client.get_paths(
-        path=expected_root,
-        recursive=True,
+    print(
+        "Response path:",
+        response_path,
     )
-)
 
-files = [
-    path
-    for path in paths
-    if not path.is_directory
-]
+    print(
+        "Metadata path:",
+        metadata_path,
+    )
 
-file_names = {
-    path.name
-    for path in files
-}
+    assert response_path == (
+        f"{expected_root}/response.json"
+    )
 
-assert file_names == {
-    response_path,
-    metadata_path,
-}
+    assert metadata_path == (
+        f"{expected_root}/metadata.json"
+    )
 
-bronze_client.delete_directory(
-    expected_root
-)
+    print(
+        "Forecast Bronze path contract: PASS"
+    )
 
-print(
-    "\nWeather Bronze Writer test: PASS"
-)
+    stored_response = read_json_object(
+        minio_client,
+        response_path,
+    )
+
+    assert stored_response == fake_payload
+
+    print(
+        "Raw response preservation: PASS"
+    )
+
+    stored_metadata = read_json_object(
+        minio_client,
+        metadata_path,
+    )
+
+    assert stored_metadata["version"] == 1
+
+    assert (
+        stored_metadata["source_name"]
+        == "open_meteo"
+    )
+
+    assert (
+        stored_metadata["api_type"]
+        == "forecast"
+    )
+
+    assert (
+        stored_metadata["warehouse_id"]
+        == "WH_HCM"
+    )
+
+    assert (
+        stored_metadata["ingestion_id"]
+        == TEST_INGESTION_ID
+    )
+
+    assert (
+        stored_metadata["requested_latitude"]
+        == 10.82
+    )
+
+    assert (
+        stored_metadata["requested_longitude"]
+        == 106.63
+    )
+
+    assert (
+        stored_metadata["response_latitude"]
+        == 10.790861
+    )
+
+    assert (
+        stored_metadata["response_longitude"]
+        == 106.6313
+    )
+
+    assert (
+        stored_metadata["http_status"]
+        == 200
+    )
+
+    assert (
+        stored_metadata["requested_at"]
+        == TEST_REQUESTED_AT.isoformat()
+    )
+
+    print(
+        "Weather metadata contract: PASS"
+    )
+
+    retry_response_path, retry_metadata_path = (
+        write_weather_to_bronze(
+            minio_client=minio_client,
+            api_result=fake_result,
+            metadata=metadata,
+        )
+    )
+
+    assert (
+        retry_response_path
+        == response_path
+    )
+
+    assert (
+        retry_metadata_path
+        == metadata_path
+    )
+
+    print(
+        "Retry returned same paths: PASS"
+    )
+
+    response = minio_client.list_objects_v2(
+        Bucket=BRONZE_BUCKET,
+        Prefix=expected_prefix,
+    )
+
+    object_keys = {
+        item["Key"]
+        for item in response.get(
+            "Contents",
+            [],
+        )
+    }
+
+    assert object_keys == {
+        response_path,
+        metadata_path,
+    }
+
+    print(
+        "Retry duplicate validation: PASS"
+    )
+
+    print(
+        "\n"
+        "WEATHER BRONZE WRITER "
+        "MINIO E2E: PASS"
+    )
+
+finally:
+
+    cleanup_prefix(
+        minio_client,
+        expected_prefix,
+    )
+
+    print(
+        "Weather Bronze Writer "
+        "test cleanup: PASS"
+    )
