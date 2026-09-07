@@ -144,3 +144,27 @@ models:
       - name: item_line_count
         data_tests:
           - not_null
+  - name: dim_date
+    description: "Conformed calendar dimension dùng chung cho các business process của FastOrder."
+    columns:
+      - name: date_key
+        data_tests:
+          - not_null
+          - unique
+
+      - name: date_day
+        data_tests:
+          - not_null
+          - unique
+
+      - name: year
+        data_tests:
+          - not_null
+
+      - name: month
+        data_tests:
+          - not_null
+
+      - name: day_of_week
+        data_tests:
+          - not_null

@@ -10,6 +10,21 @@ select
     order_delivered_customer_date,
     order_estimated_delivery_date,
 
+    to_char(order_purchase_timestamp::date, 'YYYYMMDD')::int
+        as purchase_date_key,
+
+    to_char(order_approved_at::date, 'YYYYMMDD')::int
+        as approved_date_key,
+
+    to_char(order_delivered_carrier_date::date, 'YYYYMMDD')::int
+        as carrier_date_key,
+
+    to_char(order_delivered_customer_date::date, 'YYYYMMDD')::int
+        as delivered_date_key,
+
+    to_char(order_estimated_delivery_date::date, 'YYYYMMDD')::int
+        as estimated_delivery_date_key,
+
     item_line_count,
     total_quantity,
     distinct_product_count,

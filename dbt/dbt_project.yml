@@ -20,3 +20,6 @@ models:
     marts:
       +schema: marts
       +materialized: table
+vars:
+  calendar_start_date: "2014-01-01"
+  calendar_end_date: "2027-12-31"
