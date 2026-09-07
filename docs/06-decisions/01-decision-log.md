@@ -1004,3 +1004,71 @@ Kết quả:
 `MinIO Bronze -> Local Spark/PySpark + Delta Lake OSS -> ClickHouse -> dbt Core -> Power BI Desktop`
 
 **Reason:** Giữ được separation giữa file-based heavy processing và OLAP warehouse, không cần paid cloud services. ClickHouse được chọn làm server OLAP/DWH thay vì dùng PostgreSQL làm warehouse; DuckDB vẫn có thể dùng như công cụ local phụ trợ nhưng không phải warehouse chính.
+
+---
+
+## D-043 — Base-First V1 Platform Strategy
+
+**Date:** 01/09/2026
+
+### Context
+
+FastOrder đã tích lũy nhiều thiết kế nâng cao trong quá trình phát triển, nhưng việc tiếp tục bổ sung công nghệ trước khi platform cơ bản chạy End-to-End làm tăng độ phức tạp và giảm khả năng hiểu rõ lý do tồn tại của từng technology.
+
+### Decision
+
+FastOrder áp dụng chiến lược:
+
+`Simplest structurally correct V1 → E2E → observe limitations → deliberate upgrade`
+
+V1 giữ ba ingestion flows:
+
+- Operational PostgreSQL;
+- YOOCHOOSE File;
+- Open-Meteo API.
+
+V1 analytical stack:
+
+`MinIO → Spark/Delta → PostgreSQL DWH → dbt Core → Power BI`
+
+PostgreSQL DWH phải tách biệt với PostgreSQL OLTP.
+
+ClickHouse được chuyển sang V2 backlog.
+
+### Reason
+
+Mục tiêu của project không phải sử dụng càng nhiều technology càng tốt mà là hiểu được vấn đề mà từng technology giải quyết.
+
+Việc bắt đầu bằng PostgreSQL DWH giúp hoàn thiện platform nhanh hơn và tạo baseline thực tế để sau này so sánh với ClickHouse.
+
+### Upgrade Rule
+
+Mỗi V2 upgrade phải trả lời:
+
+1. V1 đang gặp giới hạn gì?
+2. Vì sao giới hạn đó xảy ra?
+3. Technology/design mới giải quyết giới hạn đó như thế nào?
+
+---
+
+## D-044 — YOOCHOOSE V1 Manual Delivery and MinIO Landing Boundary
+
+**Date:** 01/09/2026
+
+### Context
+
+Sau khi chuyển khỏi Azure, pipeline YOOCHOOSE cần một source-delivery mechanism đơn giản để hoàn thiện V1 mà không phải xây thêm HTTP/SFTP ingestion infrastructure.
+
+### Decision
+
+V1 coi việc manual download YOOCHOOSE archive vào local filesystem như một lần external provider delivery.
+
+Flow:
+
+```text
+External Provider
+→ Local Raw
+→ Validation / Temporary Preparation
+→ MinIO Landing
+→ Airflow File Ingestion
+→ MinIO Bronze

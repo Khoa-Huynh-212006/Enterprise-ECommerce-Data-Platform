@@ -1,0 +1,825 @@
+
+
+====================================================================================================
+FILE: ..\fastorder\ingestion\file_based\file_discovery.py
+====================================================================================================
+from dataclasses import dataclass
+from datetime import datetime
+from azure.storage.filedatalake import FileSystemClient
+
+@dataclass(frozen=True)
+class DiscoveredFile:
+    relative_path: str
+    etag: str
+    size: int
+    last_modified: datetime
+
+def discover_files(
+    file_system_client: FileSystemClient,
+    root_path: str,
+) -> list[DiscoveredFile]:
+    
+    "Tìm tất cả các file CSV hợp lệ dưới thư mục root_path một cách đệ quy."
+
+    normalized_root = root_path.strip("/") #Xóa ký tự "/" ở đầu và ở cuối path
+    root_prefix = normalized_root + "/"
+
+    paths = file_system_client.get_paths(
+        path=normalized_root,
+        recursive=True,
+    )
+
+    discovered_files = []
+
+    for path in paths:
+        if path.is_directory:
+            continue
+
+        if not path.name.lower().endswith(".csv"):
+            continue
+
+        if not path.name.startswith(root_prefix):
+            raise ValueError(
+                f"Đường dẫn được phát hiện nằm ngoài root_path: {path.name}"
+            )
+
+        relative_path = path.name[len(root_prefix):]
+
+        discovered_file = DiscoveredFile(
+            relative_path=relative_path,
+            etag=path.etag,
+            size=path.content_length,
+            last_modified=path.last_modified,
+        )
+
+        discovered_files.append(discovered_file)
+
+    discovered_files.sort(
+        key=lambda file: file.relative_path
+    )
+
+    return discovered_files
+
+
+====================================================================================================
+FILE: ..\fastorder\ingestion\file_based\manifest_manager.py
+====================================================================================================
+from dataclasses import dataclass
+from datetime import datetime
+from typing import Literal, cast
+import json
+import os
+from pathlib import Path
+
+ManifestStatus = Literal[
+    "PENDING",
+    "PROCESSED",
+]
+
+
+MANIFEST_VERSION = 1
+YOOCHOOSE_SOURCE_NAME = "yoochoose_clickstream"
+
+ALLOWED_MANIFEST_STATUSES = {
+    "PENDING",
+    "PROCESSED",
+}
+
+
+@dataclass(frozen=True) # giúp bạn không phải viết constructor thủ công
+class ManifestEntry: # Một ManifestEntry đại diện cho một version cụ thể của một file
+    relative_path: str
+    etag: str
+    size: int
+    last_modified: datetime
+
+    status: ManifestStatus
+    ingestion_id: str
+    discovered_at: datetime
+    processed_at: datetime | None
+
+
+@dataclass(frozen=True)
+class FileManifest:
+    version: int
+    source_name: str
+    entries: tuple[ManifestEntry, ...]
+
+
+def create_initial_manifest() -> FileManifest:
+    return FileManifest(
+        version=MANIFEST_VERSION,
+        source_name=YOOCHOOSE_SOURCE_NAME,
+        entries=(),
+    )
+
+def manifest_entry_to_dict(entry: ManifestEntry) -> dict: # Chuyển các Manifest entry thành dict Python
+    return {
+        "relative_path": entry.relative_path,
+        "etag": entry.etag,
+        "size": entry.size,
+        "last_modified": entry.last_modified.isoformat(),
+        "status": entry.status,
+        "ingestion_id": entry.ingestion_id,
+        "discovered_at": entry.discovered_at.isoformat(),
+        "processed_at": (
+            entry.processed_at.isoformat()
+            if entry.processed_at is not None
+            else None
+        ),
+    }
+
+def manifest_to_dict(manifest: FileManifest) -> dict: #Chuyển toàn bộ danh sách Manifest entry thành dict Python
+    return {
+        "version": manifest.version,
+        "source_name": manifest.source_name,
+        "entries": [
+            manifest_entry_to_dict(entry)
+            for entry in manifest.entries
+        ],
+    }
+
+def manifest_entry_from_dict(data: dict) -> ManifestEntry: 
+    return ManifestEntry(
+        relative_path=data["relative_path"],
+        etag=data["etag"],
+        size=data["size"],
+        last_modified=datetime.fromisoformat(
+            data["last_modified"]
+        ),
+        status=cast(
+            ManifestStatus,
+            data["status"]
+        ),
+        ingestion_id=data["ingestion_id"],
+        discovered_at=datetime.fromisoformat(
+            data["discovered_at"]
+        ),
+        processed_at=(
+            datetime.fromisoformat(data["processed_at"])
+            if data["processed_at"] is not None
+            else None
+        ),
+    )
+
+def manifest_from_dict(data: dict) -> FileManifest:
+    return FileManifest(
+        version=data["version"],
+        source_name=data["source_name"],
+        entries=tuple(
+            manifest_entry_from_dict(entry)
+            for entry in data["entries"]
+        ),
+    )
+
+def validate_manifest(manifest: FileManifest) -> None:
+    if manifest.version != MANIFEST_VERSION:
+        raise ValueError(
+            f"Không hỗ trợ manifest version này: {manifest.version}"
+        )
+
+    if manifest.source_name != YOOCHOOSE_SOURCE_NAME:
+        raise ValueError(
+            f"source_name không đúng: {manifest.source_name}"
+        )
+
+    seen_identities: set[tuple[str, str]] = set() # Kiểm tra duplicate
+
+    for entry in manifest.entries:
+        if not entry.relative_path.strip():
+            raise ValueError(
+                "Manifest entry có relative_path rỗng"
+            )
+
+        if not entry.etag.strip():
+            raise ValueError(
+                f"Manifest entry có etag rỗng: "
+                f"{entry.relative_path}"
+            )
+
+        if entry.size < 0:
+            raise ValueError(
+                f"Manifest entry có kích thước âm: "
+                f"{entry.relative_path}"
+            )
+
+        if entry.status not in ALLOWED_MANIFEST_STATUSES:
+            raise ValueError(
+                f"Manifest entry có status không thuộc PENDING hoặc PROCESSED"
+                f"{entry.status!r}: {entry.relative_path}"
+            )
+
+        if not entry.ingestion_id.strip():
+            raise ValueError(
+                f"Manifest entry có ingestion_id rỗng: "
+                f"{entry.relative_path}"
+            )
+
+        identity = (
+            entry.relative_path,
+            entry.etag,
+        )
+
+        if identity in seen_identities:
+            raise ValueError(
+                f"Duplicate manifest identity: {identity}"
+            )
+
+        seen_identities.add(identity)
+
+        if (
+            entry.status == "PENDING"
+            and entry.processed_at is not None
+        ):
+            raise ValueError(
+                f"PENDING entry không được có processed_at: "
+                f"{entry.relative_path}"
+            )
+
+        if (
+            entry.status == "PROCESSED"
+            and entry.processed_at is None
+        ):
+            raise ValueError(
+                f"PROCESSED entry phải có processed_at: "
+                f"{entry.relative_path}"
+            )
+
+def save_manifest(
+    manifest: FileManifest,
+    manifest_path: Path,
+) -> None:
+    """
+    Validate and atomically persist a manifest as JSON.
+    """
+
+    validate_manifest(manifest)
+
+    manifest_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    temp_path = manifest_path.with_suffix(
+        manifest_path.suffix + ".tmp"
+    )
+
+    manifest_dict = manifest_to_dict(manifest)
+
+    with temp_path.open(
+        "w",
+        encoding="utf-8",
+    ) as file:
+        json.dump(
+            manifest_dict,
+            file,
+            indent=2,
+            ensure_ascii=False,
+        )
+
+        file.flush()
+        os.fsync(file.fileno())
+
+    os.replace(
+        temp_path,
+        manifest_path,
+    )
+
+def load_manifest(
+    manifest_path: Path,
+) -> FileManifest:
+    """
+    Tải và xác thực một manifest từ JSON. 
+    Nếu manifest không tồn tại, trả về một manifest trống ban đầu.
+    """
+
+    if not manifest_path.exists():
+        return create_initial_manifest()
+
+    with manifest_path.open(
+        "r",
+        encoding="utf-8",
+    ) as file:
+        manifest_dict = json.load(file)
+
+    manifest = manifest_from_dict(manifest_dict)
+
+    validate_manifest(manifest)
+
+    return manifest
+
+
+def find_manifest_entry(
+    manifest: FileManifest,
+    relative_path: str,
+    etag: str,
+) -> ManifestEntry | None:
+    """
+    Tìm một manifest entry theo nhận dạng phiên bản tệp nguồn: (relative_path, etag).
+    """
+
+    for entry in manifest.entries:
+        if (
+            entry.relative_path == relative_path
+            and entry.etag == etag
+        ):
+            return entry
+
+    return None
+
+
+def add_pending_entry(
+    manifest: FileManifest,
+    *,
+    relative_path: str,
+    etag: str,
+    size: int,
+    last_modified: datetime,
+    ingestion_id: str,
+    discovered_at: datetime,
+) -> FileManifest:
+    """
+    Thêm một phiên bản tệp nguồn PENDING mới vào bản kê khai.
+    Ném ValueError nếu cùng (relative_path, etag) đã tồn tại.
+    """
+
+    existing_entry = find_manifest_entry(
+        manifest,
+        relative_path=relative_path,
+        etag=etag,
+    )
+
+    if existing_entry is not None:
+        raise ValueError(
+            "Manifest entry đã tồn tại "
+            f"({relative_path}, {etag})"
+        )
+
+    pending_entry = ManifestEntry(
+        relative_path=relative_path,
+        etag=etag,
+        size=size,
+        last_modified=last_modified,
+        status="PENDING",
+        ingestion_id=ingestion_id,
+        discovered_at=discovered_at,
+        processed_at=None,
+    )
+
+    updated_manifest = FileManifest(
+        version=manifest.version,
+        source_name=manifest.source_name,
+        entries=manifest.entries + (pending_entry,),
+    )
+
+    validate_manifest(updated_manifest)
+
+    return updated_manifest
+
+
+def mark_processed(
+    manifest: FileManifest,
+    *,
+    relative_path: str,
+    etag: str,
+    processed_at: datetime,
+) -> FileManifest:
+    """
+    Đánh dấu phiên bản tệp nguồn PENDING thành PROCESSED.
+    """
+
+    existing_entry = find_manifest_entry(
+        manifest,
+        relative_path=relative_path,
+        etag=etag,
+    )
+
+    if existing_entry is None:
+        raise ValueError(
+            "Không thể đánh dấu PROCESSED cho 1 entry không tồn tại: "
+            f"({relative_path}, {etag})"
+        )
+
+    if existing_entry.status != "PENDING":
+        raise ValueError(
+            "Chỉ có trạng thái PENDING mới được chuyển sang PROCESSED "
+            f"{relative_path}"
+        )
+
+    processed_entry = ManifestEntry(
+        relative_path=existing_entry.relative_path,
+        etag=existing_entry.etag,
+        size=existing_entry.size,
+        last_modified=existing_entry.last_modified,
+
+        status="PROCESSED",
+        ingestion_id=existing_entry.ingestion_id,
+
+        discovered_at=existing_entry.discovered_at,
+        processed_at=processed_at,
+    )
+
+    updated_entries = tuple(
+        processed_entry
+        if (
+            entry.relative_path == relative_path
+            and entry.etag == etag
+        )
+        else entry
+        for entry in manifest.entries
+    )
+
+    updated_manifest = FileManifest(
+        version=manifest.version,
+        source_name=manifest.source_name,
+        entries=updated_entries,
+    )
+
+    validate_manifest(updated_manifest)
+
+    return updated_manifest
+
+
+====================================================================================================
+FILE: ..\fastorder\ingestion\file_based\file_bronze_writer.py
+====================================================================================================
+from datetime import datetime
+from azure.storage.filedatalake import FileSystemClient
+from fastorder.ingestion.file_based.file_discovery import (
+    DiscoveredFile,
+)
+from io import BytesIO
+import pandas as pd
+from zoneinfo import ZoneInfo
+
+SOURCE_NAME = "yoochoose_clickstream"
+INGESTION_METHOD = "file_incremental"
+BRONZE_ROOT = "clickstream/yoochoose"
+
+def write_file_to_bronze(
+    *,
+    landing_client: FileSystemClient,
+    bronze_client: FileSystemClient,
+    source_root: str,
+    source_file: DiscoveredFile,
+    ingestion_id: str,
+    ingested_at: datetime,
+) -> str:
+
+    normalized_root = source_root.strip("/")
+
+    source_path = (
+        f"{normalized_root}/"
+        f"{source_file.relative_path}"
+    )
+
+    source_file_client = landing_client.get_file_client(source_path) # Thêm object trỏ tới vị trí file
+
+    download = source_file_client.download_file()
+    source_bytes = download.readall() #trả về 1 python object kiểu Bytes nằm trong RAM
+
+    downloaded_size = len(source_bytes)
+
+    if downloaded_size != source_file.size:
+        raise ValueError(
+            "Downloaded source có kích thước không khớp: "
+            f"path={source_file.relative_path}, "
+            f"expected={source_file.size}, "
+            f"actual={downloaded_size}"
+        )
+
+    source_df = pd.read_csv(
+        BytesIO(source_bytes),
+        header=None,
+        dtype=str,
+        keep_default_na=False,
+        na_filter=False,
+        on_bad_lines="error",
+    )
+
+    EXPECTED_SOURCE_COLUMNS = 4
+
+    # dataframe.shape (rows, columns)
+    if source_df.shape[1] != EXPECTED_SOURCE_COLUMNS:
+        raise ValueError(
+            "Số lượng cột không đúng với nguồn: "
+            f"path={source_file.relative_path}, "
+            f"expected={EXPECTED_SOURCE_COLUMNS}, "
+            f"actual={source_df.shape[1]}"
+        )
+
+    source_df.columns = [
+        "session_id",
+        "event_timestamp",
+        "item_id",
+        "category",
+    ]
+
+    bronze_df = source_df.assign(
+        _source_name=SOURCE_NAME,
+        _source_file_path=source_file.relative_path,
+        _source_file_etag=source_file.etag,
+        _source_file_last_modified=source_file.last_modified,
+        _source_file_size=source_file.size,
+        _ingestion_id=ingestion_id,
+        _ingested_at=ingested_at,
+        _ingestion_method=INGESTION_METHOD,
+    )
+
+    if len(bronze_df) != len(source_df):
+        raise ValueError(
+            "Số dòng dữ liệu bị thay đổi sau khi thêm metadata"
+        )
+
+    parquet_buffer = BytesIO() # Tạo một vùng bộ nhớ RAM có giao diện giống một file.
+
+    bronze_df.to_parquet(
+        parquet_buffer,
+        engine="pyarrow",
+        index=False,
+        compression="snappy",
+    ) # lấy DataFrame này, serialize nó thành định dạng Parquet và ghi kết quả vào parquet_buffer (RAM)
+
+    parquet_bytes = parquet_buffer.getvalue() # lấy toàn bộ nội dung hiện có trong BytesIO và trả về dạng:
+
+    if not parquet_bytes:
+        raise ValueError(
+            "Parquet serialization tạo ra kết quả empty"
+        )
+
+    if not parquet_bytes.startswith(b"PAR1"):
+        raise ValueError(
+            "Serialized output không giống định dạng Parquet"
+        )
+
+    if not ingestion_id.strip():
+        raise ValueError(
+            "ingestion_id không được để trống"
+        )
+
+    if "/" in ingestion_id or "\\" in ingestion_id:
+        raise ValueError(
+            f"ingestion_id không hợp lệ: {ingestion_id}"
+        )
+
+    ingestion_date = (
+        ingested_at
+        .astimezone(ZoneInfo("Asia/Ho_Chi_Minh"))
+        .date()
+        .isoformat()
+    )
+
+    bronze_path = (
+        f"{BRONZE_ROOT}/"
+        f"ingestion_date={ingestion_date}/"
+        f"ingestion_id={ingestion_id}/"
+        "part-000.parquet"
+    )
+
+    bronze_file_client = bronze_client.get_file_client(bronze_path)
+
+    bronze_file_client.upload_data(parquet_bytes,overwrite=True)
+
+    return bronze_path
+
+
+====================================================================================================
+FILE: ..\fastorder\ingestion\file_based\file_ingestion_runner.py
+====================================================================================================
+from dataclasses import dataclass
+from datetime import datetime, timezone
+from pathlib import Path
+from uuid import uuid4
+
+from azure.storage.filedatalake import FileSystemClient
+
+from fastorder.ingestion.file_based.file_discovery import (
+    discover_files,
+)
+
+from fastorder.ingestion.file_based.manifest_manager import (
+    load_manifest,
+    save_manifest,
+    find_manifest_entry,
+    add_pending_entry,
+    mark_processed,
+)
+
+from fastorder.ingestion.file_based.file_bronze_writer import (
+    write_file_to_bronze,
+)
+
+
+@dataclass(frozen=True)
+class FileIngestionResult:
+    discovered: int
+    processed: int
+    skipped: int
+    retried: int
+
+
+def run_file_ingestion(
+    *,
+    landing_client: FileSystemClient,
+    bronze_client: FileSystemClient,
+    source_root: str,
+    manifest_path: Path,
+) -> FileIngestionResult:
+    """
+    Nạp gia tăng discovered Landing files vào Bronze bằng việc
+    sử dụng manifest-based state management.
+    """
+
+    print(f"Đang nạp manifest từ {manifest_path}")
+    manifest = load_manifest(manifest_path)
+    print(f"Số lượng manifest nạp vào trong đợt này là {len(manifest.entries)}")
+
+
+    print("Đang quét souce file tại Landing")
+    discovered_files = discover_files(
+        file_system_client=landing_client, 
+        root_path=source_root
+    )
+    print(f"Tổng số file hợp lệ tìm trên Azure thấy là {len(discovered_files)}")
+
+
+    processed = 0
+    skipped = 0
+    retried = 0
+
+    for source_file in discovered_files:
+        existing_entry = find_manifest_entry(
+            manifest,
+            source_file.relative_path,
+            source_file.etag,
+        )
+
+        if existing_entry is None:
+            print(
+                f"Thêm mới manifest entry: {source_file.relative_path}"
+            )
+        else:
+            print(
+                f"Tìm thấy manifest entry: {source_file.relative_path} "
+                f"status={existing_entry.status}"
+            )
+
+        if (existing_entry is not None and existing_entry.status == "PROCESSED"):
+            skipped += 1
+            print(
+                f"SKIP: {source_file.relative_path} "
+                f"đã được xử lý trước đó"
+            )
+            continue
+        if (existing_entry is not None and existing_entry.status == "PENDING"):
+            retried += 1
+            ingestion_id = existing_entry.ingestion_id
+            ingested_at = existing_entry.discovered_at
+            print(
+                f"RETRY: {source_file.relative_path} "
+                f"ingestion_id={ingestion_id}"
+            )
+        if existing_entry is None:
+            ingestion_id = str(uuid4())
+            ingested_at = datetime.now(timezone.utc)
+
+            manifest = add_pending_entry(
+                manifest,
+                relative_path=source_file.relative_path,
+                etag=source_file.etag,
+                size=source_file.size,
+                last_modified=source_file.last_modified,
+                ingestion_id=ingestion_id,
+                discovered_at=ingested_at,
+            )
+
+            save_manifest(
+                manifest,
+                manifest_path,
+            )
+
+            print(
+                f"PENDING: {source_file.relative_path} "
+                f"ingestion_id={ingestion_id}"
+            )
+
+        bronze_path = write_file_to_bronze(
+            landing_client=landing_client,
+            bronze_client=bronze_client,
+            source_root=source_root,
+            source_file=source_file,
+            ingestion_id=ingestion_id,
+            ingested_at=ingested_at,
+        )
+
+        print(
+            f"BRONZE: {source_file.relative_path} "
+            f"-> {bronze_path}"
+        )
+
+        processed_at = datetime.now(timezone.utc)
+        manifest = mark_processed(
+            manifest,
+            relative_path=source_file.relative_path,
+            etag=source_file.etag,
+            processed_at=processed_at,
+        )
+
+        save_manifest(
+            manifest,
+            manifest_path,
+        )
+
+        processed += 1
+
+        print(f"PROCESSED: {source_file.relative_path}")
+
+    result = FileIngestionResult(
+        discovered=len(discovered_files),
+        processed=processed,
+        skipped=skipped,
+        retried=retried,
+    )
+
+    print(
+        "\nFile ingestion completed: "
+        f"discovered={result.discovered}, "
+        f"processed={result.processed}, "
+        f"skipped={result.skipped}, "
+        f"retried={result.retried}"
+    )
+
+    return result
+
+
+
+====================================================================================================
+FILE: ..\dags\yoochoose_file_ingestion.py
+====================================================================================================
+from datetime import datetime
+from pathlib import Path
+from zoneinfo import ZoneInfo
+
+from airflow.sdk import dag, task
+
+from fastorder.storage.adls_client import get_adls_service_client
+from fastorder.ingestion.file_based.file_ingestion_runner import run_file_ingestion
+
+
+SOURCE_ROOT = "clickstream/yoochoose/prepared"
+
+MANIFEST_PATH = Path(
+    "/opt/airflow/state/file_based/"
+    "yoochoose_manifest.json"
+)
+
+
+@dag(
+    dag_id="yoochoose_file_ingestion",
+    start_date=datetime(
+        2026,
+        1,
+        1,
+        tzinfo=ZoneInfo("Asia/Ho_Chi_Minh")
+    ),
+    schedule=None,
+    catchup=False,
+    tags=[
+        "fastorder",
+        "file-ingestion",
+        "yoochoose",
+    ]
+)
+
+def yoochoose_file_ingestion():
+
+    @task
+    def ingest_files():
+        service_client = get_adls_service_client()
+
+        landing_client = (
+            service_client.get_file_system_client("landing")
+        )
+
+        bronze_client = (
+            service_client.get_file_system_client("bronze")
+        )
+
+        result = run_file_ingestion(
+            landing_client=landing_client,
+            bronze_client=bronze_client,
+            source_root=SOURCE_ROOT,
+            manifest_path=MANIFEST_PATH,
+        )
+
+        return {
+            "discovered": result.discovered,
+            "processed": result.processed,
+            "skipped": result.skipped,
+            "retried": result.retried,
+        }
+
+    ingest_files()
+
+
+yoochoose_file_ingestion()

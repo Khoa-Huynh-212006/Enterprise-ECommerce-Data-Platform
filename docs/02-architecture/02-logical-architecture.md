@@ -104,28 +104,28 @@ Không trộn control state vào business table chỉ để suy luận pipeline 
 ## 3. Luồng logic tổng quát
 
 ```text
-Operational DB -------------------------------> Ingestion ---> Bronze
-External API ---------------------------------> Ingestion ---> Bronze
-File Source ---> Landing ---> File Ingestion ----------------> Bronze
-                                                             |
-                                                             v
-                                                        Processing
-                                                             |
-                                                             v
-                                                           Silver
-                                                             |
-                                                             v
-                                                   Analytics Warehouse
-                                                             |
-                                                             v
-                                                      Gold / Data Marts
-                                                             |
-                                                             v
-                                                        Consumption
-```
+PostgreSQL OLTP --------+
+                        |
+YOOCHOOSE files --------+----> Airflow --------------------+
+                        |                                  |
+Open-Meteo API ---------+                                  v
+                                                   MinIO Data Lake
+                                              landing / bronze / silver
+                                                           |
+                                                           v
+                                                  Local Spark + Delta
+                                                           |
+                                                           v
+                                                   PostgreSQL DWH
+                                                  (separate service)
+                                                           |
+                                                        dbt Core
+                                                           |
+                                                           v
+                                                   Power BI Desktop
 
 Orchestration & Observability điều phối xuyên suốt nhưng không nằm trên data path như một storage zone.
-
+```
 ---
 
 ## 4. Design Principles
@@ -137,3 +137,22 @@ Orchestration & Observability điều phối xuyên suốt nhưng không nằm t
 5. **Decouple Storage and Compute:** storage path không được chi phối business logic.
 6. **Explicit Grain:** Silver và Gold phải khai báo grain trước khi viết transformation.
 7. **Validation before Promotion:** dữ liệu chỉ được promote sang layer tiếp theo sau khi qua các validation phù hợp.
+
+
+## 5. Technology Mapping
+
+| Logical capability | Công nghệ | Trạng thái | Vai trò |
+|---|---|---|---|
+| Operational Source | PostgreSQL 16 | ✅ Implemented | FastOrder OLTP current-state |
+| External API | Open-Meteo | ✅ Source/client implemented | Weather context |
+| File Source | YOOCHOOSE | ✅ V1 implemented | Clickstream external file source |
+| Orchestration | Apache Airflow 3.3 + CeleryExecutor | ✅ Implemented | DAG, retry, scheduling, observability |
+| Data Lake | MinIO (S3-compatible) | ✅ Operational + File implemented | Landing/Bronze/Silver object storage |
+| Object Storage Client | boto3 | ✅ Implemented | S3-compatible I/O to MinIO |
+| Bronze serialization | PyArrow + Parquet | ✅ Operational + File implemented | Bronze structured storage |
+| Processing | Local Apache Spark / PySpark | ⏳ Planned | Bronze → Silver compute |
+| Table format | Delta Lake OSS | ⏳ Planned | Transactional Silver datasets |
+| Analytics Warehouse V1 | PostgreSQL | ⏳ Planned | Analytical DWH, separate from OLTP |
+| SQL modeling | dbt Core + dbt-postgres | ⏳ Planned | Fact/Dimension, marts, tests |
+| Consumption | Power BI Desktop | ⏳ Planned | Dashboard/reporting |
+| Warehouse upgrade V2 | ClickHouse | 📦 Backlog | OLAP upgrade after V1 is complete |

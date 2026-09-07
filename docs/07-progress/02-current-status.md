@@ -1,14 +1,23 @@
+```markdown
 # Current Project Status
 
-**As of:** 31/08/2026  
-**Current phase:** Local-First Architecture Migration
+**As of:** 01/09/2026  
+**Current phase:** Weather API Bronze → MinIO Migration
 
 ---
 
 ## 1. Executive Summary
 
-FastOrder đã chuyển hướng khỏi Azure-paid development stack sang local-first zero-cost stack. **Operational PostgreSQL -> MinIO Bronze đã hoàn tất và được chứng nhận 11/11 tables.** File-based và Weather flows đã có logic ingestion/Silver quan trọng từ giai đoạn trước nhưng physical storage/runtime vẫn cần port khỏi Azure.
+FastOrder đang chạy trên local-first zero-cost development stack.
 
+Hai ingestion flows đã hoàn thành trên MinIO:
+
+1. Operational PostgreSQL → MinIO Bronze: **11/11 tables PASS**.
+2. YOOCHOOSE File Flow → MinIO Landing/Bronze: **E2E PASS**.
+
+Flow ingestion còn lại cần migrate khỏi Azure là Open-Meteo Weather API.
+
+Sau khi cả ba ingestion flows hoàn tất, project sẽ chuyển sang Local Spark/Delta → Silver → PostgreSQL DWH → dbt Core → Power BI.
 ---
 
 ## 2. Platform Status
@@ -47,65 +56,126 @@ Operational tables:
 `geolocation`, `customers`, `warehouses`, `orders`, `products`, `sellers`, `order_items`, `order_reviews`, `order_payments`, `product_category_name_translation`, `inventory`.
 
 ---
-
 ## 4. File-Based / YOOCHOOSE
 
-**Status: 🟡 Logical flow complete, MinIO port pending**
+**Status: ✅ E2E COMPLETE ON MINIO**
 
-Đã có:
+### Source preparation
 
-- daily source organization;
-- File Discovery;
-- Manifest Manager;
-- Bronze Writer design;
-- deterministic ingestion identity;
-- NEW/PENDING/PROCESSED recovery semantics;
-- Airflow DAG.
+V1 sử dụng manual external-provider delivery:
 
-Còn lại:
-
-- thay Azure/ADLS I/O bằng MinIO Landing/Bronze;
-- recertify file flow E2E trên MinIO;
-- cleanup Azure-specific dependencies.
-
+```text
+YOOCHOOSE provider
+→ local raw archive
+→ yoochoose-clicks.dat
+→ validation
+→ daily preparation
+→ MinIO Landing
+```
 ---
 
 ## 5. Weather API
 
-**Status: 🟡 Logical flow complete, MinIO/local-Spark port pending**
+**Status: 🟢 Bronze ingestion on MinIO COMPLETE**
 
-Đã có:
+### Forecast
 
-- Open-Meteo forecast ingestion;
-- historical/backfill ingestion;
-- metadata contract;
-- `response.json + metadata.json + _SUCCESS` commit semantics;
-- Forecast Silver design;
-- Historical Silver overlap reconciliation/control state.
+Đã hoàn tất:
 
-Còn lại:
+- Open-Meteo Forecast ingestion cho 5 warehouse:
+  - `WH_HN`
+  - `WH_HP`
+  - `WH_DN`
+  - `WH_HCM`
+  - `WH_CT`
+- Bronze Writer đã migrate từ ADLS sang MinIO bằng boto3 S3-compatible client.
+- Giữ nguyên sidecar contract:
+  - `response.json`
+  - `metadata.json`
+  - `_SUCCESS`
+- `_SUCCESS` tiếp tục là commit boundary.
+- Forecast ingestion ID vẫn deterministic theo:
+  `api_type + warehouse_id + Airflow run_id`.
+- Retry cùng logical Airflow run sử dụng lại cùng ingestion root và SKIP ingestion đã commit.
+- Single-warehouse Runner integration PASS.
+- Multi-warehouse Runner test PASS.
+- Airflow Forecast DAG đã migrate sang MinIO.
+- Production Forecast run:
+  - total = 5
+  - committed = 5
+  - skipped = 0
+- Production Bronze reconciliation PASS:
+  - 5 ingestion units
+  - 15 expected objects
+  - metadata lineage đúng
+  - `_SUCCESS = COMMITTED`
 
-- Azure Bronze I/O -> MinIO;
-- ABFSS/Databricks runtime -> local Spark + S3-compatible paths;
-- Delta Lake OSS persistence verification.
+### Historical Forecast
 
----
+Đã hoàn tất:
 
+- Historical Forecast bootstrap/backfill sử dụng Open-Meteo Historical Forecast API.
+- Historical ingestion ID deterministic theo:
+  `warehouse_id + start_date + end_date`.
+- `run_id` không thuộc Historical identity.
+- Cùng warehouse + cùng historical window ở DAG run khác vẫn map về cùng ingestion ID.
+- Cross-run replay test PASS:
+  - run đầu COMMITTED;
+  - run sau với `run_id` khác nhưng cùng window → SKIPPED;
+  - API không bị gọi lại;
+  - không tạo duplicate logical ingestion.
+- Historical Batch Runner PASS:
+  - 90 ngày
+  - window 30 ngày
+  - 3 windows
+  - 5 warehouses/window
+  - 15 ingestion units.
+- Airflow Historical Backfill DAG đã migrate sang MinIO.
+- Production Historical backfill PASS:
+  - total = 15
+  - committed = 15
+  - skipped = 0.
+- Production windows:
+  - `2026-06-03 -> 2026-07-02`
+  - `2026-07-03 -> 2026-08-01`
+  - `2026-08-02 -> 2026-08-31`
+- MinIO Bronze đã xác nhận tạo đúng 3 historical window prefixes.
+
+### Weather Bronze contract
+
+```text
+weather/open_meteo/
+├── forecast/
+│   └── ingestion_date=YYYY-MM-DD/
+│       └── warehouse_id=.../
+│           └── ingestion_id=.../
+│               ├── response.json
+│               ├── metadata.json
+│               └── _SUCCESS
+│
+└── historical_forecast/
+    └── window_start=YYYY-MM-DD/
+        └── window_end=YYYY-MM-DD/
+            └── warehouse_id=.../
+                └── ingestion_id=.../
+                    ├── response.json
+                    ├── metadata.json
+                    └── _SUCCESS
+
+```markdown
 ## 6. Analytics Layer
 
 **Status: ⚪ Planned**
 
-Target:
+V1 target:
 
 ```text
 MinIO Silver
-  -> ClickHouse
-  -> dbt Core
-  -> Business Marts
-  -> Power BI Desktop
+  → PostgreSQL DWH
+  → dbt Core
+  → Business Marts
+  → Power BI Desktop
 ```
-
-Operational Silver sẽ được khởi động lại sạch sau khi local Spark/Delta đã ổn định; không tiếp tục các notebook Operational Silver cũ.
 
 ---
 

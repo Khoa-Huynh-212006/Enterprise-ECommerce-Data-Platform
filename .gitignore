@@ -221,3 +221,10 @@ data/raw/yoochoose/
 data/replay/yoochoose
 state/file_based
 
+data
+# Local runtime dependencies
+*.jar
+
+# Local runtime state
+logs/
+state/

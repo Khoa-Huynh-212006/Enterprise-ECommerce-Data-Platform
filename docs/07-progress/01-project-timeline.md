@@ -1,7 +1,7 @@
 # Project Timeline — FastOrder Enterprise E-Commerce Data Platform
 
-**Last updated:** 31/08/2026  
-**Current phase:** Local-First Architecture Migration
+**As of:** 2026-09-01
+**Current phase:** Weather Bronze → MinIO Migration
 
 > Timeline là **lịch sử**. Các mốc Azure/Databricks bên dưới phản ánh kiến trúc tại thời điểm chúng được thực hiện; current architecture phải đọc từ `02-current-status.md` và `../02-architecture/03-physical-architecture.md`.
 
@@ -187,3 +187,186 @@ YOOCHOOSE storage I/O -> MinIO
 Weather storage I/O -> MinIO
 Then local Spark/Delta -> ClickHouse -> dbt -> Power BI
 ```
+
+---
+
+## Mốc 34 — YOOCHOOSE File Flow Migrated to MinIO
+
+### 01/09/2026
+
+**Mục tiêu**
+
+Hoàn thiện File-Based Ingestion trên local-first stack và loại bỏ ADLS khỏi runtime YOOCHOOSE.
+
+### Source Delivery & Validation
+
+- Manual download `yoochoose-data.7z` được sử dụng làm external provider delivery cho V1.
+- Extract `yoochoose-clicks.dat`.
+- Raw file size: `1,486,798,186 bytes`.
+- Validated `33,003,944` records.
+- Malformed rows: `0`.
+- Event dates: `183`.
+- Timestamp range:
+  `2014-04-01T03:00:00.124Z → 2014-09-30T02:59:59.430Z`.
+- Phát hiện raw source không được sort theo `event_date`.
+
+### Preparation
+
+- Sử dụng local temporary workspace để partition raw records theo event date.
+- Tạo đúng `183` daily headerless CSV files.
+- Local temporary area không được xem là Landing zone.
+- Upload prepared files vào canonical MinIO Landing.
+
+### MinIO Landing
+
+Target:
+
+`landing/clickstream/yoochoose/prepared/event_date=YYYY-MM-DD/part-000.csv`
+
+Validation:
+
+- Uploaded: `183/183`.
+- Total bytes: `1,486,798,186`.
+- File Discovery: `183/183`.
+
+### File Ingestion Migration
+
+Port thành công:
+
+- File Discovery: ADLS → MinIO.
+- Bronze Writer: ADLS → MinIO.
+- File Ingestion Runner: ADLS → MinIO.
+- Airflow DAG: ADLS client → boto3 MinIO client.
+
+Giữ nguyên:
+
+- NEW/PENDING/PROCESSED manifest semantics.
+- deterministic ingestion identity.
+- logical `discovered_at`.
+- retry-safe deterministic Bronze path.
+
+### Recovery Validation
+
+Integration tests PASS:
+
+- First run processing.
+- PROCESSED → SKIP.
+- PENDING → RETRY.
+- ingestion identity preservation.
+- discovered timestamp preservation.
+- post-Bronze crash recovery.
+- no duplicate Bronze object.
+- test artifact cleanup.
+
+### Production Airflow E2E
+
+DAG:
+
+`yoochoose_file_ingestion`
+
+Production result:
+
+```text
+discovered=183
+processed=183
+skipped=0
+retried=0
+
+
+## Mốc 35 — Weather API Bronze Migrated to MinIO
+
+### 01/09/2026
+
+**Mục tiêu**
+
+- Hoàn tất migration luồng Open-Meteo Forecast và Historical Forecast từ ADLS sang MinIO.
+- Giữ nguyên ingestion identity, commit semantics, retry/replay behavior và Bronze sidecar contract đã được chứng minh trước đó.
+
+**Đã thực hiện**
+
+### Weather Bronze Writer
+
+- Thay Azure `FileSystemClient` bằng boto3 S3-compatible MinIO client.
+- Giữ nguyên:
+  - raw `response.json`;
+  - technical `metadata.json`;
+  - deterministic Bronze paths.
+- Forecast Bronze Writer MinIO E2E PASS.
+- Retry cùng ingestion identity ghi lại cùng object keys, không sinh duplicate.
+
+### Weather Ingestion State
+
+- Port `_SUCCESS` existence check sang `head_object`.
+- Chỉ coi `404 / NoSuchKey / NotFound` là marker chưa tồn tại.
+- Các infrastructure error khác vẫn fail-fast.
+- `_SUCCESS` write sử dụng deterministic `put_object`.
+- State MinIO E2E PASS.
+
+### Forecast Flow
+
+- Port Forecast Runner sang MinIO.
+- Single-warehouse integration PASS:
+  - first run COMMITTED;
+  - replay SKIPPED;
+  - replay dừng trước API call.
+- Multi-warehouse Runner PASS cho đủ 5 warehouses.
+- Port `weather_forecast_ingestion` Airflow DAG sang MinIO.
+- Production Forecast run PASS:
+  - total = 5
+  - committed = 5
+  - skipped = 0.
+- Production Bronze reconciliation PASS:
+  - 5 ingestion units;
+  - 15 objects;
+  - metadata lineage đúng;
+  - `_SUCCESS` đúng commit marker.
+
+### Historical Forecast Flow
+
+- Giữ historical identity:
+  `warehouse_id + start_date + end_date`.
+- Historical identity test PASS.
+- Port single Historical Runner integration sang MinIO.
+- Cross-run replay PASS:
+  - `run_id` khác;
+  - cùng warehouse/window;
+  - cùng ingestion ID;
+  - `_SUCCESS` tồn tại;
+  - API không gọi lại;
+  - SKIPPED.
+- Historical Batch Runner PASS:
+  - 90-day bootstrap;
+  - 30-day deterministic windows;
+  - 3 windows × 5 warehouses = 15 ingestion units.
+- Trong quá trình test phát hiện và sửa một wiring bug thực tế:
+  `inio_client` -> `minio_client`.
+- Port `weather_historical_backfill` Airflow DAG sang MinIO.
+- Production Historical backfill PASS:
+  - `2026-06-03 -> 2026-07-02`
+  - `2026-07-03 -> 2026-08-01`
+  - `2026-08-02 -> 2026-08-31`
+  - total = 15
+  - committed = 15
+  - skipped = 0.
+- MinIO Bronze xác nhận đúng 3 historical window prefixes.
+
+**Kết quả**
+
+Weather Bronze migration từ ADLS sang MinIO: **COMPLETE**.
+
+Ba ingestion flows của FastOrder hiện đã có Bronze implementation local-first:
+
+```text
+Operational PostgreSQL
+        ↓
+    MinIO Bronze
+
+YOOCHOOSE Files
+        ↓
+MinIO Landing → MinIO Bronze
+
+Open-Meteo API
+        ↓
+    MinIO Bronze
+
+    

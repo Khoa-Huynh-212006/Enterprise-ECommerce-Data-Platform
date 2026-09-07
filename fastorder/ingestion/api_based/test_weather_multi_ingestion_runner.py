@@ -13,26 +13,33 @@ from fastorder.ingestion.api_based.weather_ingestion_runner import (
 
 TEST_RUN_ID = "test_weather_multi_run_001"
 
-TEST_LOGICAL_AT = datetime(2026,8,16,6,0,tzinfo=timezone.utc,)
+TEST_LOGICAL_AT = datetime(
+    2026,
+    8,
+    16,
+    6,
+    0,
+    tzinfo=timezone.utc,
+)
 
 
-# =========================================================
-# Fake Bronze client
-# =========================================================
+
+# Fake MinIO client
+
 #
-# Outer runner không trực tiếp dùng ADLS.
-# Nó chỉ truyền bronze_client xuống single runner.
+# Outer runner không trực tiếp thao tác MinIO.
+# Nó chỉ truyền minio_client xuống single runner.
 #
-# Vì single runner sẽ bị mock nên ở test này
-# không cần kết nối Azure thật.
+# Vì single runner bị mock hoàn toàn trong test này,
+# ta không cần kết nối MinIO thật.
 #
 
-fake_bronze_client = MagicMock()
+fake_minio_client = MagicMock()
 
 
-# =========================================================
+
 # Fake behavior cho từng warehouse
-# =========================================================
+
 
 COMMITTED_WAREHOUSES = {
     "WH_HN",
@@ -48,7 +55,7 @@ SKIPPED_WAREHOUSES = {
 
 def fake_run_forecast_ingestion(
     *,
-    bronze_client,
+    minio_client,
     warehouse_id,
     latitude,
     longitude,
@@ -57,6 +64,7 @@ def fake_run_forecast_ingestion(
 ):
 
     if warehouse_id in COMMITTED_WAREHOUSES:
+
         status = "committed"
 
         response_path = (
@@ -68,14 +76,17 @@ def fake_run_forecast_ingestion(
         )
 
     elif warehouse_id in SKIPPED_WAREHOUSES:
+
         status = "skipped"
 
         response_path = None
         metadata_path = None
 
     else:
+
         raise RuntimeError(
-            f"Warehouse ngoài test config: {warehouse_id}"
+            f"Warehouse ngoài test config: "
+            f"{warehouse_id}"
         )
 
     ingestion_id = (
@@ -104,9 +115,9 @@ def fake_run_forecast_ingestion(
     )
 
 
-# =========================================================
+
 # Patch single-warehouse runner
-# =========================================================
+
 
 with patch(
     (
@@ -118,15 +129,15 @@ with patch(
 ) as mock_single_runner:
 
     result = run_all_forecast_ingestions(
-        bronze_client=fake_bronze_client,
+        minio_client=fake_minio_client,
         run_id=TEST_RUN_ID,
         logical_at=TEST_LOGICAL_AT,
     )
 
 
-# =========================================================
-# TEST 1: aggregate counters
-# =========================================================
+
+# TEST 1: Aggregate counters
+
 
 print(
     "Total:",
@@ -145,11 +156,8 @@ print(
 
 
 assert result.total == 5
-
 assert result.committed == 3
-
 assert result.skipped == 2
-
 assert len(result.results) == 5
 
 
@@ -158,9 +166,9 @@ print(
 )
 
 
-# =========================================================
-# TEST 2: single runner phải được gọi 5 lần
-# =========================================================
+
+# TEST 2: Single runner phải được gọi 5 lần
+
 
 assert mock_single_runner.call_count == 5
 
@@ -170,18 +178,20 @@ print(
 )
 
 
-# =========================================================
-# TEST 3: đúng thứ tự warehouse config
-# =========================================================
+
+# TEST 3: Đúng thứ tự warehouse config
+
 
 expected_warehouse_ids = [
     warehouse.warehouse_id
-    for warehouse in WAREHOUSE_WEATHER_LOCATIONS
+    for warehouse
+    in WAREHOUSE_WEATHER_LOCATIONS
 ]
 
 actual_warehouse_ids = [
     item.warehouse_id
-    for item in result.results
+    for item
+    in result.results
 ]
 
 
@@ -207,23 +217,24 @@ print(
 )
 
 
-# =========================================================
-# TEST 4: mỗi call nhận đúng config
-# =========================================================
+
+# TEST 4: Mỗi call nhận đúng config
+
 
 for index, warehouse in enumerate(
     WAREHOUSE_WEATHER_LOCATIONS
 ):
 
-    call = mock_single_runner.call_args_list[
-        index
-    ]
+    call = (
+        mock_single_runner
+        .call_args_list[index]
+    )
 
     kwargs = call.kwargs
 
     assert (
-        kwargs["bronze_client"]
-        is fake_bronze_client
+        kwargs["minio_client"]
+        is fake_minio_client
     )
 
     assert (
@@ -257,9 +268,9 @@ print(
 )
 
 
-# =========================================================
-# TEST 5: statuses đúng
-# =========================================================
+
+# TEST 5: Statuses đúng
+
 
 statuses = {
     item.warehouse_id: item.status
@@ -268,6 +279,7 @@ statuses = {
 
 
 for warehouse_id in COMMITTED_WAREHOUSES:
+
     assert (
         statuses[warehouse_id]
         == "committed"
@@ -275,6 +287,7 @@ for warehouse_id in COMMITTED_WAREHOUSES:
 
 
 for warehouse_id in SKIPPED_WAREHOUSES:
+
     assert (
         statuses[warehouse_id]
         == "skipped"
@@ -287,5 +300,7 @@ print(
 
 
 print(
-    "\nWeather multi-ingestion runner test: PASS"
+    "\n"
+    "WEATHER MULTI-INGESTION "
+    "RUNNER TEST: PASS"
 )

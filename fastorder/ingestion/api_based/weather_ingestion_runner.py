@@ -1,9 +1,7 @@
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
-from azure.storage.filedatalake import (
-    FileSystemClient,
-)
+from botocore.client import BaseClient
 
 from fastorder.ingestion.api_based.weather_api_client import (
     fetch_forecast,
@@ -60,7 +58,7 @@ class WeatherBatchIngestionResult:
 
 def run_forecast_ingestion(
     *,
-    bronze_client: FileSystemClient,
+    minio_client: BaseClient,
     warehouse_id: str,
     latitude: float,
     longitude: float,
@@ -104,7 +102,7 @@ def run_forecast_ingestion(
     )
 
     if success_marker_exists(
-        bronze_client=bronze_client,
+        minio_client=minio_client,
         ingestion_root=ingestion_root,
     ):
 
@@ -146,14 +144,14 @@ def run_forecast_ingestion(
 
     response_path, metadata_path = (
         write_weather_to_bronze(
-            bronze_client=bronze_client,
+            minio_client=minio_client,
             api_result=api_result,
             metadata=metadata,
         )
     )
 
     success_path = write_success_marker(
-        bronze_client=bronze_client,
+        minio_client=minio_client,
         ingestion_root=ingestion_root,
     )
 
@@ -175,7 +173,7 @@ def run_forecast_ingestion(
 
 def run_all_forecast_ingestions(
     *,
-    bronze_client: FileSystemClient,
+    minio_client: BaseClient,
     run_id: str,
     logical_at: datetime,
 ) -> WeatherBatchIngestionResult:
@@ -193,7 +191,7 @@ def run_all_forecast_ingestions(
         )
 
         result = run_forecast_ingestion(
-            bronze_client=bronze_client,
+            minio_client=minio_client,
             warehouse_id=warehouse.warehouse_id,
             latitude=warehouse.latitude,
             longitude=warehouse.longitude,
@@ -225,7 +223,7 @@ def run_all_forecast_ingestions(
 
 def run_historical_forecast_ingestion(
     *,
-    bronze_client: FileSystemClient,
+    minio_client: BaseClient,
     warehouse_id: str,
     latitude: float,
     longitude: float,
@@ -294,7 +292,7 @@ def run_historical_forecast_ingestion(
     )
 
     if success_marker_exists(
-        bronze_client=bronze_client,
+        minio_client=minio_client,
         ingestion_root=ingestion_root,
     ):
 
@@ -340,7 +338,7 @@ def run_historical_forecast_ingestion(
 
     response_path, metadata_path = (
         write_historical_weather_to_bronze(
-            bronze_client=bronze_client,
+            minio_client=minio_client,
             api_result=api_result,
             metadata=metadata,
             start_date=start_date,
@@ -349,7 +347,7 @@ def run_historical_forecast_ingestion(
     )
 
     success_path = write_success_marker(
-        bronze_client=bronze_client,
+        minio_client=minio_client,
         ingestion_root=ingestion_root,
     )
 
@@ -371,7 +369,7 @@ def run_historical_forecast_ingestion(
 
 def run_all_historical_forecast_ingestions(
     *,
-    bronze_client: FileSystemClient,
+    minio_client: BaseClient,
     end_date: date,
     run_id: str,
     logical_at: datetime,
@@ -408,7 +406,7 @@ def run_all_historical_forecast_ingestions(
             )
 
             result = run_historical_forecast_ingestion(
-                bronze_client=bronze_client,
+                minio_client=minio_client,
 
                 warehouse_id=warehouse.warehouse_id,
                 latitude=warehouse.latitude,

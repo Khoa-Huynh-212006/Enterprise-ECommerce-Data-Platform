@@ -1,95 +1,92 @@
+File hiện tại vẫn coi YOOCHOOSE MinIO là milestone chưa hoàn thành. :contentReference[oaicite:5]{index=5}
+
+Tôi sẽ **rewrite file này gọn lại hoàn toàn**, vì backlog cũ đã lệch phase.
+
+```markdown
 # Next Milestones
 
-**Starting point:** 31/08/2026 — sau khi Operational PostgreSQL -> MinIO Bronze đạt 11/11 E2E PASS.
+**Starting point:** 01/09/2026
 
-> Thứ tự dưới đây là dependency order, không phải deadline. Chỉ chuyển sang milestone kế tiếp khi Definition of Done của milestone hiện tại đạt.
+Completed ingestion flows:
+
+- Operational PostgreSQL → MinIO Bronze ✅
+- YOOCHOOSE File → MinIO Landing/Bronze ✅
+
+Current focus:
+
+- Open-Meteo Weather API → MinIO Bronze
+
+> Thứ tự dưới đây là dependency order, không phải deadline.
 
 ---
+ ## M1 — Weather Bronze -> MinIO ✅ COMPLETE
 
-## M1 — Documentation & Operational DAG Cleanup
+### Kết quả
 
-### Mục tiêu
+Weather API Bronze migration từ Azure Data Lake Storage sang MinIO đã hoàn tất.
 
-Đóng sạch milestone Operational MinIO trước khi đụng source flow khác.
+### Forecast
 
-### Must-have
+- Bronze Writer -> MinIO PASS.
+- Commit State (`_SUCCESS`) -> MinIO PASS.
+- Single-warehouse Runner integration PASS.
+- 5-warehouse aggregation PASS.
+- Forecast Airflow DAG -> MinIO PASS.
+- Production Open-Meteo Forecast:
+  - total = 5
+  - committed = 5
+  - skipped = 0.
+- Production Bronze reconciliation:
+  - 5 ingestion units
+  - 15 objects
+  - PASS.
 
-- Đồng bộ architecture/status/timeline/decision docs.
-- Rename `perational_incremental_ingestion_dags.py` thành `operational_incremental_ingestion_dags.py`.
-- Dọn stale `__pycache__`/serialized DAG metadata nếu cần.
-- Xóa `adls_bronze_writer.py` sau khi xác nhận không còn production import.
+### Historical Forecast
+
+- Deterministic historical ingestion identity PASS.
+- Single Historical Runner -> MinIO PASS.
+- Cross-run replay -> SKIP PASS.
+- Historical batch orchestration:
+  - 3 windows
+  - 5 warehouses
+  - 15 units
+  - PASS.
+- Historical Airflow DAG -> MinIO PASS.
+- Production Historical backfill:
+  - total = 15
+  - committed = 15
+  - skipped = 0.
 
 ### Definition of Done
 
-- Airflow chỉ register đúng generic operational DAGs mong đợi.
-- Full Operational Bronze validator vẫn PASS 11/11.
+- [x] Forecast 5 warehouses E2E PASS.
+- [x] Historical/backfill E2E PASS.
+- [x] Retry/replay không tạo duplicate logical ingestion.
+- [x] `_SUCCESS` vẫn là commit boundary.
+- [x] Weather production path không còn phụ thuộc ADLS storage client.
 
 ---
 
-## M2 — YOOCHOOSE File Flow -> MinIO
+## M2 — Remove Azure Runtime Dependencies ✅ COMPLETE
 
-### Must-have
-
-- Source boundary ở `landing` bucket.
-- Port File Discovery ADLS -> S3/MinIO listing.
-- Port Bronze Writer ADLS -> MinIO.
-- Giữ nguyên Manifest và NEW/PENDING/PROCESSED semantics.
-- Giữ deterministic destination/retry overwrite.
-
-### Definition of Done
-
-- Initial file ingestion PASS.
-- Rerun -> SKIP đúng.
-- PENDING recovery -> RETRY đúng.
-- Bronze object/content reconciliation PASS.
-
+- Azure storage client removed.
+- ADLS Bronze writers removed.
+- Azure-only Bronze tests removed or migrated.
+- File Bronze Writer dedicated MinIO E2E PASS.
+- Production Python/DAG runtime contains no Azure SDK imports.
+- Airflow compile/import/DAG registration validation PASS.
+- Operational, File and Weather ingestion layers now run local-first without Azure credentials.
 ---
 
-## M3 — Weather Bronze -> MinIO
+## M3 — Local Spark + Delta Lake OSS
 
 ### Must-have
 
-- Port Weather Bronze Writer.
-- Port committed-ingestion discovery/state khỏi ADLS SDK.
-- Giữ nguyên sidecar contract:
-  `response.json + metadata.json + _SUCCESS`.
-- Forecast và historical DAG chạy trên MinIO.
-
-### Definition of Done
-
-- Forecast 5 warehouses E2E PASS.
-- Historical/backfill E2E PASS.
-- Retry không tạo duplicate logical ingestion.
-- `_SUCCESS` vẫn là commit boundary.
-
----
-
-## M4 — Remove Azure Runtime Dependencies
-
-Chỉ làm sau M2 + M3.
-
-### Must-have
-
-- Xóa `storage/adls_client.py` nếu không còn import.
-- Xóa Azure SDK dependencies không còn dùng.
-- Xóa Azure env variables khỏi local branch.
-- Grep toàn repo để phân loại Azure references còn lại thành `historical docs` hoặc `bug`.
-
-### Definition of Done
-
-- Production code path không cần Azure credential/package.
-- Operational/File/Weather Bronze đều chạy local-first.
-
----
-
-## M5 — Local Spark + Delta Lake OSS
-
-### Must-have
-
-- Spark đọc/ghi MinIO qua S3-compatible configuration.
+- Setup Local Spark/PySpark.
+- Spark đọc MinIO bằng S3-compatible configuration.
 - Delta Lake OSS hoạt động local.
-- Test đọc production Operational Parquet.
-- Verify explicit `timestamp[us]` compatibility bằng Spark thực tế.
+- Test đọc production Operational và YOOCHOOSE Bronze.
+- Verify Parquet compatibility.
 
 ### Definition of Done
 
@@ -98,69 +95,86 @@ Chỉ làm sau M2 + M3.
 
 ---
 
-## M6 — Port Weather Silver
+## M4 — Port Weather Silver
 
 Không redesign business semantics.
 
-### Forecast
-
-- Grain: `warehouse_id + ingestion_id + forecast_time`.
-- Committed Bronze discovery.
-- Pending detection.
-- DQ + validation.
-- Persistence + replay `NO_OP`.
-
-### Historical
-
-- Grain: `warehouse_id + weather_time`.
-- Overlap reconciliation.
-- `weather_history_processed_ingestions` control dataset.
-- Delta MERGE.
-- Replay `NO_OP`.
+Giữ nguyên Forecast/Historical contracts đã chứng minh ở stack cũ.
 
 ### Definition of Done
 
-- Kết quả logic tương đương implementation đã chứng minh trên stack cũ.
+- Forecast Silver E2E PASS.
+- Historical Silver E2E PASS.
+- Incremental pending detection PASS.
+- Replay `NO_OP` PASS.
 
 ---
 
-## M7 — Operational Silver
+## M5 — Operational Silver
 
-Bắt đầu sạch sau khi Spark/Delta ổn định.
+Ưu tiên:
 
-Ưu tiên đầu tiên:
+- `orders_observed_versions`
+- grain: `(order_id, updated_at)`
 
-- `orders_observed_versions` — grain `(order_id, updated_at)`.
-- `order_status_history` — chỉ derive transition đã quan sát, không fabricate unseen state.
+sau đó:
 
-Sau đó mở rộng sang các operational entities còn lại.
+- `order_status_history`
 
----
+Chỉ derive những state transition thực sự quan sát được.
 
-## M8 — ClickHouse Data Warehouse
-
-- Add ClickHouse Docker service.
-- Thiết kế staging/core loading boundary từ Silver.
-- Chọn Fact/Dimension theo KPI/business needs.
-- Reconciliation Silver -> DWH.
+Không fabricate lịch sử mà current-state polling chưa từng nhìn thấy.
 
 ---
 
-## M9 — dbt Core & Business Marts
+## M6 — PostgreSQL DWH V1
 
-- `dbt-clickhouse` project.
-- Sources/staging models.
-- Fact/Dimension models.
+- Add PostgreSQL DWH service riêng.
+- Không dùng chung database với FastOrder OLTP.
+- Thiết kế Silver → DWH loading boundary.
+- Chọn Fact/Dimension dựa trên stakeholder KPI.
+- Reconciliation Silver → DWH.
+
+---
+
+## M7 — dbt Core & Business Marts
+
+- `dbt-postgres`.
+- Sources.
+- Staging models.
+- Fact/Dimension.
 - Business marts.
-- dbt tests và documentation.
+- dbt tests.
+- Documentation.
 
 ---
 
-## M10 — Power BI, Operations & Portfolio Polish
+## M8 — Power BI & V1 Completion
 
-- Power BI dashboards theo stakeholder KPI.
+- Power BI dashboards.
+- KPI validation.
 - Runbook.
-- Monitoring/data-quality summary.
-- CI checks phù hợp.
+- Monitoring/DQ summary.
 - README/architecture polish.
-- Final English translation sau khi Vietnamese docs ổn định.
+- Final E2E walkthrough.
+
+---
+
+# V2 Upgrade Backlog
+
+Chỉ bắt đầu sau khi FastOrder V1 chạy E2E.
+
+Các candidate:
+
+- Manual YOOCHOOSE delivery → automated HTTP/SFTP/object-storage delivery.
+- PostgreSQL DWH → ClickHouse.
+- Basic batch observability → richer monitoring.
+- Local state → stronger metadata/state infrastructure.
+- Local runtime → deployment/cloud.
+- Timestamp incremental extraction → CDC/streaming nếu có business need thực tế.
+
+Mỗi upgrade phải trả lời:
+
+1. V1 đang gặp vấn đề gì?
+2. Tại sao vấn đề đó xảy ra?
+3. Công nghệ/design mới giải quyết nó như thế nào?

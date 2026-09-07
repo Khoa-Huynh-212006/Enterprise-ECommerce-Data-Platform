@@ -1,9 +1,12 @@
+from datetime import date
 from uuid import NAMESPACE_URL, uuid5
 
-from azure.core.exceptions import ResourceNotFoundError
+from botocore.client import BaseClient
+from botocore.exceptions import ClientError
 
-from azure.storage.filedatalake import FileSystemClient
-from datetime import date
+
+BRONZE_BUCKET = "bronze"
+
 
 def build_weather_ingestion_id(
     *,
@@ -44,7 +47,7 @@ def build_weather_ingestion_id(
 
 def success_marker_exists(
     *,
-    bronze_client: FileSystemClient,
+    minio_client: BaseClient,
     ingestion_root: str,
 ) -> bool:
 
@@ -52,23 +55,35 @@ def success_marker_exists(
         f"{ingestion_root}/_SUCCESS"
     )
 
-    file_client = (
-        bronze_client.get_file_client(
-            success_path
-        )
-    )
-
     try:
-        file_client.get_file_properties()
+        minio_client.head_object(
+            Bucket=BRONZE_BUCKET,
+            Key=success_path,
+        )
+
         return True
 
-    except ResourceNotFoundError:
-        return False
+    except ClientError as error:
+
+        error_code = (
+            error.response
+            .get("Error", {})
+            .get("Code")
+        )
+
+        if error_code in {
+            "404",
+            "NoSuchKey",
+            "NotFound",
+        }:
+            return False
+
+        raise
 
 
 def write_success_marker(
     *,
-    bronze_client: FileSystemClient,
+    minio_client: BaseClient,
     ingestion_root: str,
 ) -> str:
 
@@ -76,18 +91,15 @@ def write_success_marker(
         f"{ingestion_root}/_SUCCESS"
     )
 
-    file_client = (
-        bronze_client.get_file_client(
-            success_path
-        )
-    )
-
-    file_client.upload_data(
-        b"COMMITTED\n",
-        overwrite=True,
+    minio_client.put_object(
+        Bucket=BRONZE_BUCKET,
+        Key=success_path,
+        Body=b"COMMITTED\n",
+        ContentType="text/plain",
     )
 
     return success_path
+
 
 def build_historical_weather_ingestion_id(
     *,
@@ -101,19 +113,26 @@ def build_historical_weather_ingestion_id(
             "warehouse_id không được rỗng"
         )
 
-    if not isinstance(start_date, date):
+    if not isinstance(
+        start_date,
+        date,
+    ):
         raise ValueError(
             "start_date phải là date"
         )
 
-    if not isinstance(end_date, date):
+    if not isinstance(
+        end_date,
+        date,
+    ):
         raise ValueError(
             "end_date phải là date"
         )
 
     if start_date > end_date:
         raise ValueError(
-            "start_date không được lớn hơn end_date"
+            "start_date không được "
+            "lớn hơn end_date"
         )
 
     identity_key = (

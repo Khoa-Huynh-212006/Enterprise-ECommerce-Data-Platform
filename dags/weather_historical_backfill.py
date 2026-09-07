@@ -8,8 +8,8 @@ from airflow.sdk import (
     get_current_context,
 )
 
-from fastorder.storage.adls_client import (
-    get_adls_service_client,
+from fastorder.storage.minio_client import (
+    get_minio_client,
 )
 
 from fastorder.ingestion.api_based.weather_ingestion_runner import (
@@ -20,7 +20,12 @@ from fastorder.ingestion.api_based.weather_ingestion_runner import (
 @dag(
     dag_id="weather_historical_backfill",
 
-    start_date=pendulum.datetime(2026, 8, 16, tz="Asia/Ho_Chi_Minh"),
+    start_date=pendulum.datetime(
+        2026,
+        8,
+        16,
+        tz="Asia/Ho_Chi_Minh",
+    ),
 
     schedule=None,
     catchup=False,
@@ -55,6 +60,11 @@ def weather_historical_backfill():
             f"Airflow logical_at: {logical_at}"
         )
 
+
+
+        # Historical bootstrap boundary
+
+
         logical_date_vn = (
             logical_at.in_timezone(
                 "Asia/Ho_Chi_Minh"
@@ -73,21 +83,23 @@ def weather_historical_backfill():
             f"{end_date}"
         )
 
-        service_client = (
-            get_adls_service_client()
+
+
+        # MinIO
+
+
+        minio_client = (
+            get_minio_client()
         )
 
-        bronze_client = (
-            service_client
-            .get_file_system_client(
-                "bronze"
-            )
-        )
+
+
+        # Historical backfill
 
 
         result = (
             run_all_historical_forecast_ingestions(
-                bronze_client=bronze_client,
+                minio_client=minio_client,
                 end_date=end_date,
                 run_id=run_id,
                 logical_at=logical_at,
@@ -95,6 +107,11 @@ def weather_historical_backfill():
                 window_days=30,
             )
         )
+
+
+
+        # Summary
+
 
         print(
             "\nHistorical backfill completed"
@@ -121,4 +138,6 @@ def weather_historical_backfill():
 
 
     ingest_historical_weather()
+
+
 weather_historical_backfill()

@@ -1,617 +1,193 @@
-from pyspark.sql import DataFrame, SparkSession
-from delta.tables import DeltaTable
-from pyspark.sql.types import TimestampType
-from pyspark.sql import functions as F
-    
-# Lấy ra danh sách các Paths đã commit (_SUCCESS)
-def discover_committed_forecast_ingestions(
-    bronze_client,
-    forecast_root: str,
-) -> list[str]:
+from pyspark.sql import DataFrame, SparkSession, functions as F
 
-    committed_ingestion_paths = []
+BRONZE_ROOT = "s3a://bronze/weather/open_meteo/forecast"
+SILVER_PATH = "s3a://silver/weather/open_meteo/forecast_hourly"
 
-    paths = bronze_client.get_paths(
-        path=forecast_root,
-        recursive=True,
-    )
 
-    for path in paths:
-        if (
-            not path.is_directory
-            and path.name.endswith("/_SUCCESS")
-        ):
-            ingestion_path = path.name.removesuffix("/_SUCCESS")
+def delta_table_exists(spark: SparkSession, path: str) -> bool:
+    delta_log = spark._jvm.org.apache.hadoop.fs.Path(f"{path}/_delta_log")
+    fs = delta_log.getFileSystem(spark._jsc.hadoopConfiguration())
+    return fs.exists(delta_log)
 
-            committed_ingestion_paths.append(
-                ingestion_path
-            )
 
-    return sorted(committed_ingestion_paths)
+def discover_committed_forecast_ingestions(spark: SparkSession, root: str) -> list[str]:
+    path = spark._jvm.org.apache.hadoop.fs.Path(root)
+    fs = path.getFileSystem(spark._jsc.hadoopConfiguration())
+    files = fs.listFiles(path, True)
 
-# Lấy ra danh sách các ingestion_id đã processed
-def get_processed_forecast_ingestion_ids(
-    spark: SparkSession,
-    silver_path: str,
-) -> set[str]:
-    if not DeltaTable.isDeltaTable(spark, silver_path): # check xem có phải delta dataset
+    committed = []
+    while files.hasNext():
+        file_path = files.next().getPath().toString()
+        if file_path.endswith("/_SUCCESS"):
+            committed.append(file_path.removesuffix("/_SUCCESS"))
+
+    return sorted(committed)
+
+
+def get_processed_ingestion_ids(spark: SparkSession, silver_path: str) -> set[str]:
+    if not delta_table_exists(spark, silver_path):
         return set()
-    
-    df_silver = spark.read.format("delta").load(silver_path)
 
     rows = (
-        df_silver
-        .select("ingestion_id")
-        .distinct()
-        .collect() # chuyển kết quả Spark về Python Driver
+        spark.read.format("delta").load(silver_path)
+        .select("ingestion_id").distinct().collect()
     )
 
-    return {
-        row["ingestion_id"]
-        for row in rows
-        if row["ingestion_id"] is not None
-    }
+    return {row["ingestion_id"] for row in rows if row["ingestion_id"] is not None}
 
 
-# Lấy ra danh sách các ingestion_id chưa processed
-def find_pending_forecast_ingestions(
-    committed_ingestion_paths: list[str],
-    processed_ingestion_ids: set[str],
-) -> list[str]:
-    final_ingestion_paths = []
+def extract_ingestion_id(path: str) -> str:
+    return path.rstrip("/").split("/")[-1].removeprefix("ingestion_id=")
 
-    for ingestion_path in committed_ingestion_paths:
-        ingestion_id = ingestion_path.rstrip("/").split("/")[-1].removeprefix("ingestion_id=")
-        if ingestion_id not in processed_ingestion_ids:
-            final_ingestion_paths.append(ingestion_path)
 
-    return final_ingestion_paths
+def find_pending_ingestions(committed: list[str], processed: set[str]) -> list[str]:
+    return [path for path in committed if extract_ingestion_id(path) not in processed]
 
-# Load các ingestion_id chưa processed
-def load_pending_forecast_bronze(
+
+def load_pending_bronze(
     spark: SparkSession,
-    pending_ingestion_paths: list[str],
-    bronze_abfss_root: str,
+    pending_paths: list[str],
 ) -> tuple[DataFrame, DataFrame]:
-    if not pending_ingestion_paths:
-        print(
-            "No pending Forecast ingestions. "
-            "Silver is already up to date."
-        )
 
-    response_paths = [f"{bronze_abfss_root}/{path.lstrip('/')}/response.json" for path in pending_ingestion_paths]
-    metadata_paths = [f"{bronze_abfss_root}/{path.lstrip('/')}/metadata.json" for path in pending_ingestion_paths]
+    response_paths = [f"{path}/response.json" for path in pending_paths]
+    metadata_paths = [f"{path}/metadata.json" for path in pending_paths]
 
-    df_response = spark.read.format("json").option("multiline", True).load(response_paths) #bulk load
-    df_metadata = spark.read.format("json").option("multiline", True).load(metadata_paths)
+    response_df = spark.read.option("multiline", True).json(response_paths)
+    metadata_df = spark.read.option("multiline", True).json(metadata_paths)
 
-    return df_response, df_metadata
+    return response_df, metadata_df
 
 
-# Thêm vào ingestion_id từ Path cho response df
-def extract_forecast_ingestion_context(
-    df_response: DataFrame,
-) -> DataFrame:
-    df_response = (
-        df_response
+def transform_forecast_hourly(response_df: DataFrame, metadata_df: DataFrame) -> DataFrame:
+    response_df = (
+        response_df
         .withColumn("_source_file_path", F.col("_metadata.file_path"))
-        .withColumn("ingestion_id", F.regexp_extract("_source_file_path", r"ingestion_id=([^/]+)", 1))
-    )
-    
-    return df_response
-
-
-#Làm phẳng hourly array
-def flatten_hourly_arrays(
-    df_response: DataFrame,
-) -> DataFrame:
-
-    df_response = df_response.withColumn(
-        "hourly",
-        F.arrays_zip(
-            "hourly.time",
-            "hourly.temperature_2m",
-            "hourly.relative_humidity_2m",
-            "hourly.precipitation",
-            "hourly.wind_speed_10m",
-            "hourly.weather_code",
-        )
-    )
-
-    df_response = df_response.withColumn(
-        "hourly",
-        F.explode("hourly")
-    )
-
-    df_response = df_response.select(
-        "ingestion_id",
-        "_source_file_path",
-        "latitude",
-        "longitude",
-        "timezone",
-        F.col("hourly.time").alias("time"),
-        F.col("hourly.temperature_2m").alias("temperature_2m"),
-        F.col("hourly.relative_humidity_2m").alias("relative_humidity_2m"),
-        F.col("hourly.precipitation").alias("precipitation"),
-        F.col("hourly.wind_speed_10m").alias("wind_speed_10m"),
-        F.col("hourly.weather_code").alias("weather_code"),
-    )
-
-    return df_response
-
-
-# Join response và metadata    
-def attach_forecast_metadata(
-    df_response: DataFrame,
-    df_metadata: DataFrame,
-) -> DataFrame:
-
-    df = df_response.join(
-        df_metadata,
-        on="ingestion_id",
-        how="left",
-    )
-
-    return df
-
-# Lấy columns cần thiết và đổi tên phù hợp
-def standardize_forecast_columns(
-    df: DataFrame,
-) -> DataFrame:
-
-    df = df.select(
-        "warehouse_id",
-        "ingestion_id",
-        "_source_file_path",
-
-        F.col("logical_at").alias("snapshot_at"),
-        F.col("requested_at").alias("retrieved_at"),
-        F.col("time").alias("forecast_time_local"),
-
-        "temperature_2m",
-        "relative_humidity_2m",
-        "precipitation",
-        "wind_speed_10m",
-        "weather_code",
-
-        "requested_latitude",
-        "requested_longitude",
-        "response_latitude",
-        "response_longitude",
-    )
-
-    return df
-
-def normalize_forecast_timestamps(
-    df: DataFrame,
-) -> DataFrame:
-
-    df = (
-        df
         .withColumn(
-            "retrieved_at",
-            F.col("retrieved_at").cast(TimestampType())
+            "ingestion_id",
+            F.regexp_extract("_source_file_path", r"ingestion_id=([^/]+)", 1)
         )
         .withColumn(
-            "snapshot_at",
-            F.col("snapshot_at").cast(TimestampType())
-        )
-        .withColumn(
-            "forecast_time",
-            F.to_utc_timestamp(
-                F.col("forecast_time_local").cast(TimestampType()),
-                "Asia/Ho_Chi_Minh"
+            "_hourly",
+            F.arrays_zip(
+                "hourly.time",
+                "hourly.temperature_2m",
+                "hourly.relative_humidity_2m",
+                "hourly.precipitation",
+                "hourly.wind_speed_10m",
+                "hourly.weather_code",
             )
         )
-        .drop("forecast_time_local")
-    )
-
-    return df
-
-
-def transform_forecast_hourly(
-    df_response: DataFrame,
-    df_metadata: DataFrame,
-) -> DataFrame:
-
-    df = extract_forecast_ingestion_context(df_response)
-
-    df = flatten_hourly_arrays(df)
-
-    df = attach_forecast_metadata(
-        df,
-        df_metadata,
-    )
-
-    df = standardize_forecast_columns(df)
-
-    df = normalize_forecast_timestamps(df)
-
-    return df
-
-def profile_forecast_data_quality(
-    df: DataFrame,
-) -> dict[str, int]:
-
-    quality_row = (
-        df
+        .withColumn("_hour", F.explode("_hourly"))
         .select(
-            F.sum(
-                F.col("ingestion_id").isNull().cast("int")
-            ).alias("ingestion_id_null_count"),
-
-            F.sum(
-                F.col("warehouse_id").isNull().cast("int")
-            ).alias("warehouse_id_null_count"),
-
-            F.sum(
-                F.col("snapshot_at").isNull().cast("int")
-            ).alias("snapshot_at_null_count"),
-
-            F.sum(
-                F.col("retrieved_at").isNull().cast("int")
-            ).alias("retrieved_at_null_count"),
-
-            F.sum(
-                F.col("forecast_time").isNull().cast("int")
-            ).alias("forecast_time_null_count"),
-
-            F.sum(
-                F.col("temperature_2m").isNull().cast("int")
-            ).alias("temperature_2m_null_count"),
-
-            F.sum(
-                F.col("relative_humidity_2m").isNull().cast("int")
-            ).alias("relative_humidity_2m_null_count"),
-
-            F.sum(
-                F.col("precipitation").isNull().cast("int")
-            ).alias("precipitation_null_count"),
-
-            F.sum(
-                F.col("wind_speed_10m").isNull().cast("int")
-            ).alias("wind_speed_10m_null_count"),
-
-            F.sum(
-                F.col("weather_code").isNull().cast("int")
-            ).alias("weather_code_null_count"),
-
-            F.sum(
-                F.when(
-                    F.col("relative_humidity_2m") < 0,
-                    1,
-                ).otherwise(0)
-            ).alias("relative_humidity_2m_negative_count"),
-
-            F.sum(
-                F.when(
-                    F.col("relative_humidity_2m") > 100,
-                    1,
-                ).otherwise(0)
-            ).alias("relative_humidity_2m_above_100_count"),
-
-            F.sum(
-                F.when(
-                    F.col("precipitation") < 0,
-                    1,
-                ).otherwise(0)
-            ).alias("precipitation_negative_count"),
-
-            F.sum(
-                F.when(
-                    F.col("wind_speed_10m") < 0,
-                    1,
-                ).otherwise(0)
-            ).alias("wind_speed_10m_negative_count"),
+            "ingestion_id",
+            "_source_file_path",
+            F.col("latitude").alias("response_latitude"),
+            F.col("longitude").alias("response_longitude"),
+            F.col("_hour.time").alias("forecast_time_local"),
+            F.col("_hour.temperature_2m").alias("temperature_2m"),
+            F.col("_hour.relative_humidity_2m").alias("relative_humidity_2m"),
+            F.col("_hour.precipitation").alias("precipitation"),
+            F.col("_hour.wind_speed_10m").alias("wind_speed_10m"),
+            F.col("_hour.weather_code").alias("weather_code"),
         )
-        .first()
     )
 
-    duplicate_grain_count = (
-        df
-        .groupBy(
+    metadata_df = metadata_df.select(
+        "ingestion_id",
+        "warehouse_id",
+        F.col("logical_at").alias("snapshot_at"),
+        F.col("requested_at").alias("retrieved_at"),
+        "requested_latitude",
+        "requested_longitude",
+    )
+
+    return (
+        response_df.join(metadata_df, "ingestion_id", "left")
+        .withColumn("snapshot_at", F.col("snapshot_at").cast("timestamp"))
+        .withColumn("retrieved_at", F.col("retrieved_at").cast("timestamp"))
+        .withColumn(
+            "forecast_time",
+            F.to_utc_timestamp(F.col("forecast_time_local").cast("timestamp"), "Asia/Ho_Chi_Minh")
+        )
+        .drop("forecast_time_local")
+        .select(
             "warehouse_id",
             "ingestion_id",
+            "snapshot_at",
+            "retrieved_at",
             "forecast_time",
+            "temperature_2m",
+            "relative_humidity_2m",
+            "precipitation",
+            "wind_speed_10m",
+            "weather_code",
+            "requested_latitude",
+            "requested_longitude",
+            "response_latitude",
+            "response_longitude",
         )
-        .count()
-        .filter(
-            F.col("count") > 1
-        )
-        .count()
     )
 
-    quality_result = quality_row.asDict()
 
-    quality_result["duplicate_grain_count"] = (
-        duplicate_grain_count
+def validate_forecast(df: DataFrame, pending_count: int) -> int:
+    stats = df.agg(
+        F.count("*").alias("rows"),
+        F.sum(F.col("warehouse_id").isNull().cast("int")).alias("null_warehouse"),
+        F.sum(F.col("ingestion_id").isNull().cast("int")).alias("null_ingestion"),
+        F.sum(F.col("forecast_time").isNull().cast("int")).alias("null_time"),
+        F.sum((F.col("relative_humidity_2m") < 0).cast("int")).alias("humidity_below_0"),
+        F.sum((F.col("relative_humidity_2m") > 100).cast("int")).alias("humidity_above_100"),
+        F.sum((F.col("precipitation") < 0).cast("int")).alias("negative_precipitation"),
+        F.sum((F.col("wind_speed_10m") < 0).cast("int")).alias("negative_wind"),
+    ).first()
+
+    duplicate_count = (
+        df.groupBy("warehouse_id", "ingestion_id", "forecast_time")
+        .count().filter(F.col("count") > 1).count()
     )
 
-    return quality_result
+    expected_rows = pending_count * 48
+    print(f"Pending ingestions: {pending_count}")
+    print(f"Expected rows: {expected_rows}")
+    print(f"Actual rows: {stats['rows']}")
+    print(f"Duplicate grain: {duplicate_count}")
 
-
-def assert_forecast_data_quality(
-    dq_result: dict[str, int],
-) -> None:
-
-    failed_checks = {
-        metric: count
-        for metric, count in dq_result.items()
-        if count != 0
+    failures = {
+        "row_count": stats["rows"] != expected_rows,
+        "null_warehouse": stats["null_warehouse"] != 0,
+        "null_ingestion": stats["null_ingestion"] != 0,
+        "null_time": stats["null_time"] != 0,
+        "humidity_below_0": stats["humidity_below_0"] != 0,
+        "humidity_above_100": stats["humidity_above_100"] != 0,
+        "negative_precipitation": stats["negative_precipitation"] != 0,
+        "negative_wind": stats["negative_wind"] != 0,
+        "duplicate_grain": duplicate_count != 0,
     }
 
-    if failed_checks:
-        error_details = ", ".join(
-            f"{metric}={count}"
-            for metric, count in failed_checks.items()
-        )
+    failed = [name for name, is_failed in failures.items() if is_failed]
+    if failed:
+        raise ValueError(f"Forecast Silver validation thất bại: {failed}")
 
-        raise ValueError(
-            f"Forecast Data Quality FAILED: {error_details}"
-        )
+    return stats["rows"]
 
 
-def extract_ingestion_id_from_path(
-    ingestion_path: str,
-) -> str:
-    return (
-        ingestion_path
-        .rstrip("/")
-        .split("/")[-1]
-        .removeprefix("ingestion_id=")
-    )
+def run_forecast_silver(spark: SparkSession) -> dict:
+    committed = discover_committed_forecast_ingestions(spark, BRONZE_ROOT)
+    processed = get_processed_ingestion_ids(spark, SILVER_PATH)
+    pending = find_pending_ingestions(committed, processed)
 
-def profile_forecast_validation(
-    df: DataFrame,
-    pending_ingestion_paths: list[str],
-    expected_rows_per_ingestion: int = 48,
-) -> dict[str, int]:
+    print(f"Committed ingestions: {len(committed)}")
+    print(f"Processed ingestions: {len(processed)}")
+    print(f"Pending ingestions: {len(pending)}")
 
-    pending_ingestion_ids = {
-        extract_ingestion_id_from_path(path)
-        for path in pending_ingestion_paths
-    }
+    if not pending:
+        print("Không có Forecast ingestion mới, bỏ qua ghi Silver.")
+        return {"status": "NO_OP", "written_rows": 0}
 
-    pending_ingestion_count = len(
-        pending_ingestion_ids
-    )
+    response_df, metadata_df = load_pending_bronze(spark, pending)
+    silver_df = transform_forecast_hourly(response_df, metadata_df)
+    written_rows = validate_forecast(silver_df, len(pending))
 
-    expected_total_rows = (
-        pending_ingestion_count
-        * expected_rows_per_ingestion
-    )
+    silver_df.write.format("delta").mode("append").save(SILVER_PATH)
 
-    actual_total_rows = df.count()
-
-    rows_per_ingestion = (
-        df
-        .groupBy("ingestion_id")
-        .count()
-    )
-
-    actual_ingestion_ids = {
-        row["ingestion_id"]
-        for row in (
-            rows_per_ingestion
-            .select("ingestion_id")
-            .collect()
-        )
-    }
-
-    missing_ingestion_ids = (
-        pending_ingestion_ids
-        - actual_ingestion_ids
-    )
-
-    unexpected_ingestion_ids = (
-        actual_ingestion_ids
-        - pending_ingestion_ids
-    )
-
-    invalid_row_count_ingestions = (
-        rows_per_ingestion
-        .filter(
-            F.col("count")
-            != expected_rows_per_ingestion
-        )
-        .count()
-    )
-
-    return {
-        "pending_ingestion_count":
-            pending_ingestion_count,
-
-        "actual_ingestion_count":
-            len(actual_ingestion_ids),
-
-        "expected_total_rows":
-            expected_total_rows,
-
-        "actual_total_rows":
-            actual_total_rows,
-
-        "missing_ingestion_count":
-            len(missing_ingestion_ids),
-
-        "unexpected_ingestion_count":
-            len(unexpected_ingestion_ids),
-
-        "invalid_row_count_ingestions":
-            invalid_row_count_ingestions,
-    }
-
-def assert_forecast_validation(
-    validation_result: dict[str, int],
-) -> None:
-
-    failed_checks = {}
-
-    if (
-        validation_result["expected_total_rows"]
-        != validation_result["actual_total_rows"]
-    ):
-        failed_checks["total_row_count_mismatch"] = (
-            validation_result["actual_total_rows"]
-        )
-
-    if validation_result["missing_ingestion_count"] != 0:
-        failed_checks["missing_ingestion_count"] = (
-            validation_result["missing_ingestion_count"]
-        )
-
-    if validation_result["unexpected_ingestion_count"] != 0:
-        failed_checks["unexpected_ingestion_count"] = (
-            validation_result["unexpected_ingestion_count"]
-        )
-
-    if validation_result["invalid_row_count_ingestions"] != 0:
-        failed_checks["invalid_row_count_ingestions"] = (
-            validation_result["invalid_row_count_ingestions"]
-        )
-
-    if failed_checks:
-        error_details = ", ".join(
-            f"{metric}={value}"
-            for metric, value in failed_checks.items()
-        )
-
-        raise ValueError(
-            f"Forecast Validation FAILED: {error_details}"
-        )
-
-
-
-def write_forecast_silver(
-    df: DataFrame,
-    silver_path: str,
-) -> None:
-
-    (
-        df.write
-        .format("delta")
-        .mode("append")
-        .save(silver_path)
-    )
-
-def prepare_forecast_silver_output(
-    df: DataFrame,
-) -> DataFrame:
-
-    return df.drop("_source_file_path")
-
-
-def run_weather_forecast_silver_pipeline(
-    spark: SparkSession,
-    bronze_client,
-    forecast_root: str,
-    bronze_abfss_root: str,
-    silver_path: str,
-) -> dict:
-
-    # 1. Discover committed Bronze
-    committed_ingestion_paths = (
-        discover_committed_forecast_ingestions(
-            bronze_client=bronze_client,
-            forecast_root=forecast_root,
-        )
-    )
-
-    # 2. Find already processed Silver ingestions
-    processed_ingestion_ids = (
-        get_processed_forecast_ingestion_ids(
-            spark=spark,
-            silver_path=silver_path,
-        )
-    )
-
-    # 3. Determine pending ingestions
-    pending_ingestion_paths = (
-        find_pending_forecast_ingestions(
-            committed_ingestion_paths,
-            processed_ingestion_ids,
-        )
-    )
-
-    # 4. Nothing new → successful NO-OP
-    if not pending_ingestion_paths:
-        return {
-            "status": "NO_OP",
-            "committed_ingestion_count": len(
-                committed_ingestion_paths
-            ),
-            "processed_ingestion_count": len(
-                processed_ingestion_ids
-            ),
-            "pending_ingestion_count": 0,
-            "written_row_count": 0,
-        }
-
-    # 5. Load pending Bronze
-    df_response, df_metadata = (
-        load_pending_forecast_bronze(
-            spark=spark,
-            pending_ingestion_paths=pending_ingestion_paths,
-            bronze_abfss_root=bronze_abfss_root,
-        )
-    )
-
-    # 6. Transform → Silver Candidate
-    df_silver_candidate = (
-        transform_forecast_hourly(
-            df_response=df_response,
-            df_metadata=df_metadata,
-        )
-    )
-
-    # 7. Data Quality
-    dq_result = profile_forecast_data_quality(
-        df_silver_candidate
-    )
-
-    assert_forecast_data_quality(
-        dq_result
-    )
-
-    # 8. Validation
-    validation_result = (
-        profile_forecast_validation(
-            df=df_silver_candidate,
-            pending_ingestion_paths=pending_ingestion_paths,
-        )
-    )
-
-    assert_forecast_validation(
-        validation_result
-    )
-
-    # 9. Prepare final Silver output
-    df_silver_output = (
-        prepare_forecast_silver_output(
-            df_silver_candidate
-        )
-    )
-
-    written_row_count = (
-        validation_result["actual_total_rows"]
-    )
-
-    # 10. Persist Silver
-    write_forecast_silver(
-        df=df_silver_output,
-        silver_path=silver_path,
-    )
-
-    return {
-        "status": "SUCCESS",
-        "committed_ingestion_count": len(
-            committed_ingestion_paths
-        ),
-        "processed_ingestion_count": len(
-            processed_ingestion_ids
-        ),
-        "pending_ingestion_count": len(
-            pending_ingestion_paths
-        ),
-        "written_row_count": written_row_count,
-    }
-
+    return {"status": "SUCCESS", "written_rows": written_rows}
