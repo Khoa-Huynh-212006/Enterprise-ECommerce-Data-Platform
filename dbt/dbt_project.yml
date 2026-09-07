@@ -1,0 +1,22 @@
+name: "fastorder_dwh"
+version: "1.0.0"
+config-version: 2
+
+profile: "fastorder_dwh"
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+
+clean-targets:
+  - "target"
+  - "dbt_packages"
+
+models:
+  fastorder_dwh:
+    intermediate:
+      +schema: intermediate
+      +materialized: view
+
+    marts:
+      +schema: marts
+      +materialized: table
