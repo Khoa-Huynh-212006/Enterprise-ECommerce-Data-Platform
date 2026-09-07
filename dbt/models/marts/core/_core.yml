@@ -78,3 +78,69 @@ models:
       - name: is_delivered
         data_tests:
           - not_null
+  - name: fact_order_items
+    description: "Order item fact table. Grain: một dòng cho mỗi order_id và order_item_id."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fact_orders')
+                field: order_id
+
+      - name: order_item_id
+        data_tests:
+          - not_null
+
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+
+      - name: product_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+      - name: seller_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_sellers')
+                field: seller_id
+
+      - name: warehouse_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_warehouses')
+                field: warehouse_id
+
+      - name: quantity
+        data_tests:
+          - not_null
+
+      - name: unit_price
+        data_tests:
+          - not_null
+
+      - name: freight_value
+        data_tests:
+          - not_null
+
+      - name: merchandise_value
+        data_tests:
+          - not_null
+
+      - name: item_line_count
+        data_tests:
+          - not_null
