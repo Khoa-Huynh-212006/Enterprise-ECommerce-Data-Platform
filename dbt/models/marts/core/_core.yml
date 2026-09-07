@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: "Customer dimension. Grain: một dòng cho mỗi customer_id."
+    columns:
+      - name: customer_id
+        data_tests:
+          - not_null
+          - unique
+      - name: customer_unique_id
+        data_tests:
+          - not_null
+
+  - name: dim_products
+    description: "Product dimension với thông tin category đã enrich."
+    columns:
+      - name: product_id
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_sellers
+    description: "Seller dimension. Grain: một dòng cho mỗi seller_id."
+    columns:
+      - name: seller_id
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_warehouses
+    description: "Warehouse dimension của mạng lưới FastOrder."
+    columns:
+      - name: warehouse_id
+        data_tests:
+          - not_null
+          - unique
+      - name: city
+        data_tests:
+          - not_null
+      - name: region
+        data_tests:
+          - not_null

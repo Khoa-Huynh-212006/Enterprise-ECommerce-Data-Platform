@@ -17,3 +17,61 @@ models:
       - name: total_payment_value
         data_tests:
           - not_null
+
+  - name: int_order_items_agg
+    description: "Tổng hợp order items về grain một dòng cho mỗi order."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: item_line_count
+        data_tests:
+          - not_null
+
+      - name: total_quantity
+        data_tests:
+          - not_null
+
+      - name: merchandise_value
+        data_tests:
+          - not_null
+
+      - name: total_freight_value
+        data_tests:
+          - not_null
+
+  - name: int_orders_enriched
+    description: "Order-level dataset kết hợp lifecycle, item và payment metrics. Grain: một dòng cho mỗi order."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        data_tests:
+          - not_null
+
+      - name: order_status
+        data_tests:
+          - not_null
+
+      - name: has_items
+        data_tests:
+          - not_null
+
+      - name: has_payment
+        data_tests:
+          - not_null
+
+      - name: has_order_warehouse
+        data_tests:
+          - not_null
+
+      - name: is_delivered
+        data_tests:
+          - not_null
