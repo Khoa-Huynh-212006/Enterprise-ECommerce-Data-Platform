@@ -1,0 +1,19 @@
+version: 2
+
+models:
+  - name: int_order_payments_agg
+    description: "Tổng hợp payment về grain một dòng cho mỗi order."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: payment_count
+        data_tests:
+          - not_null
+
+      - name: total_payment_value
+        data_tests:
+          - not_null
