@@ -24,6 +24,12 @@ select
     o.order_purchase_timestamp,
     i.shipping_limit_date,
 
+    to_char(o.order_purchase_timestamp::date, 'YYYYMMDD')::int
+        as purchase_date_key,
+
+    to_char(i.shipping_limit_date::date, 'YYYYMMDD')::int
+        as shipping_limit_date_key,
+        
     i.quantity,
     i.price as unit_price,
     i.freight_value,
