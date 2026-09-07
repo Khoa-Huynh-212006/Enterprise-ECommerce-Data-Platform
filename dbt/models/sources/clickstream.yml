@@ -1,0 +1,23 @@
+version: 2
+
+sources:
+  - name: staging_clickstream
+    database: fastorder_dwh
+    schema: staging
+    description: "YOOCHOOSE clickstream Silver được Spark load vào PostgreSQL DWH."
+
+    tables:
+      - name: yoochoose_clicks
+        columns:
+          - name: session_id
+            data_tests:
+              - not_null
+          - name: event_timestamp
+            data_tests:
+              - not_null
+          - name: event_date
+            data_tests:
+              - not_null
+          - name: item_id
+            data_tests:
+              - not_null
