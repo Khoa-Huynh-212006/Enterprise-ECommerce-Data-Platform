@@ -41,3 +41,40 @@ models:
       - name: region
         data_tests:
           - not_null
+
+  - name: fact_orders
+    description: "Order fact table. Grain: một dòng cho mỗi order."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        data_tests:
+          - not_null
+
+      - name: order_status
+        data_tests:
+          - not_null
+
+      - name: order_purchase_timestamp
+        data_tests:
+          - not_null
+
+      - name: order_count
+        data_tests:
+          - not_null
+
+      - name: has_items
+        data_tests:
+          - not_null
+
+      - name: has_payment
+        data_tests:
+          - not_null
+
+      - name: is_delivered
+        data_tests:
+          - not_null
