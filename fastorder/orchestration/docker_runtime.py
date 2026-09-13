@@ -1,99 +1,88 @@
-import sys
+import socket
+import subprocess
 
-import docker
+
+def _run_output(command: list[str]) -> str:
+    result = subprocess.run(
+        command,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    return result.stdout.strip()
 
 
-def _get_running_service_container(
-    client: docker.DockerClient,
-    service: str,
-):
-    containers = client.containers.list(
-        filters={
-            "label": (
-                "com.docker.compose.service="
-                f"{service}"
-            ),
-            "status": "running",
-        }
+def get_compose_project() -> str:
+    # Airflow worker tự tìm Compose project mà nó đang thuộc về.
+    hostname = socket.gethostname()
+
+    project = _run_output([
+        "docker",
+        "inspect",
+        "--format",
+        '{{ index .Config.Labels "com.docker.compose.project" }}',
+        hostname,
+    ])
+
+    if not project:
+        raise RuntimeError(
+            "Không xác định được Docker Compose project."
+        )
+
+    return project
+
+
+def get_service_container(service_name: str) -> str:
+    project = get_compose_project()
+
+    output = _run_output([
+        "docker",
+        "ps",
+        "--filter",
+        f"label=com.docker.compose.project={project}",
+        "--filter",
+        f"label=com.docker.compose.service={service_name}",
+        "--filter",
+        "status=running",
+        "--format",
+        "{{.ID}}",
+    ])
+
+    container_ids = [
+        value.strip()
+        for value in output.splitlines()
+        if value.strip()
+    ]
+
+    if len(container_ids) != 1:
+        raise RuntimeError(
+            f"Expected đúng 1 container đang chạy cho "
+            f"service '{service_name}', "
+            f"nhưng tìm thấy {len(container_ids)}."
+        )
+
+    return container_ids[0]
+
+
+def exec_in_service(
+    service_name: str,
+    command: list[str],
+) -> None:
+    container_id = get_service_container(
+        service_name
     )
 
-    if not containers:
-        raise RuntimeError(
-            f"Không tìm thấy container đang chạy "
-            f"cho service '{service}'."
-        )
+    print(
+        f"Executing in service={service_name}, "
+        f"container={container_id}"
+    )
 
-    if len(containers) > 1:
-        raise RuntimeError(
-            f"Tìm thấy nhiều container cho "
-            f"service '{service}'."
-        )
-
-    return containers[0]
-
-
-def exec_compose_service(
-    service: str,
-    command: str,
-) -> None:
-    client = docker.from_env()
-
-    try:
-        container = _get_running_service_container(
-            client=client,
-            service=service,
-        )
-
-        print(
-            f"Running in service={service}, "
-            f"container={container.name}"
-        )
-
-        exec_id = client.api.exec_create(
-            container=container.id,
-            cmd=["sh", "-lc", command],
-            stdout=True,
-            stderr=True,
-        )["Id"]
-
-        output_stream = client.api.exec_start(
-            exec_id=exec_id,
-            stream=True,
-            demux=True,
-        )
-
-        for stdout, stderr in output_stream:
-            if stdout:
-                print(
-                    stdout.decode(
-                        "utf-8",
-                        errors="replace",
-                    ),
-                    end="",
-                )
-
-            if stderr:
-                print(
-                    stderr.decode(
-                        "utf-8",
-                        errors="replace",
-                    ),
-                    end="",
-                    file=sys.stderr,
-                )
-
-        # Exit code chỉ đáng tin sau khi stream đã kết thúc.
-        result = client.api.exec_inspect(
-            exec_id
-        )
-
-        exit_code = result["ExitCode"]
-
-        if exit_code != 0:
-            raise RuntimeError(
-                f"Command failed in '{service}' "
-                f"with exit code {exit_code}."
-            )
-
-    finally:
-        client.close()
+    subprocess.run(
+        [
+            "docker",
+            "exec",
+            container_id,
+            *command,
+        ],
+        check=True,
+    )
