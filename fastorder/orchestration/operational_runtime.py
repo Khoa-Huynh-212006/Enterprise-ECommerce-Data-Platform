@@ -79,3 +79,42 @@ def test_operational_dwh_source(
             f"source:staging_operational.{table_name}",
         ],
     )
+
+
+def test_operational_dwh_sources(
+    table_names: tuple[str, ...],
+) -> None:
+
+    for table_name in table_names:
+        _validate_table(table_name)
+
+    selectors = [
+        f"source:staging_operational.{table_name}"
+        for table_name in table_names
+    ]
+
+    exec_in_service(
+        "dbt",
+        [
+            "dbt",
+            "test",
+            "--select",
+            *selectors,
+        ],
+    )
+
+
+def build_orders_mart() -> None:
+
+    exec_in_service(
+        "dbt",
+        [
+            "dbt",
+            "build",
+            "--select",
+            "dim_date",
+            "+fact_orders",
+            "--indirect-selection",
+            "cautious",
+        ],
+    )
