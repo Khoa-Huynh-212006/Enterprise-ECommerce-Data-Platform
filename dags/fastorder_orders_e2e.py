@@ -8,7 +8,15 @@ from airflow.providers.standard.operators.trigger_dagrun import (
 from fastorder.orchestration.operational_runtime import (
     run_operational_silver,
     load_operational_dwh,
-    test_operational_dwh_source,
+    test_operational_dwh_sources,
+    build_orders_mart,
+)
+
+
+ORDER_DOMAIN_TABLES = (
+    "orders",
+    "order_items",
+    "order_payments",
 )
 
 
@@ -35,10 +43,36 @@ def fastorder_orders_e2e():
         poke_interval=5,
     )
 
+    ingest_order_items = TriggerDagRunOperator(
+        task_id="ingest_order_items",
+        trigger_dag_id="incremental_order_items_dag",
+        wait_for_completion=True,
+        poke_interval=5,
+    )
+
+    ingest_order_payments = TriggerDagRunOperator(
+        task_id="ingest_order_payments",
+        trigger_dag_id="incremental_order_payments_dag",
+        wait_for_completion=True,
+        poke_interval=5,
+    )
+
     @task.python
     def orders_bronze_to_silver():
         run_operational_silver(
             "orders"
+        )
+
+    @task.python
+    def order_items_bronze_to_silver():
+        run_operational_silver(
+            "order_items"
+        )
+
+    @task.python
+    def order_payments_bronze_to_silver():
+        run_operational_silver(
+            "order_payments"
         )
 
     @task.python
@@ -48,16 +82,53 @@ def fastorder_orders_e2e():
         )
 
     @task.python
-    def test_orders_source():
-        test_operational_dwh_source(
-            "orders"
+    def order_items_silver_to_dwh():
+        load_operational_dwh(
+            "order_items"
         )
 
-    silver = orders_bronze_to_silver()
-    dwh = orders_silver_to_dwh()
-    dbt_test = test_orders_source()
+    @task.python
+    def order_payments_silver_to_dwh():
+        load_operational_dwh(
+            "order_payments"
+        )
 
-    ingest_orders >> silver >> dwh >> dbt_test
+    @task.python
+    def source_quality_gate():
+        test_operational_dwh_sources(
+            ORDER_DOMAIN_TABLES
+        )
+
+    @task.python
+    def build_order_analytics():
+        build_orders_mart()
+
+    orders_silver = orders_bronze_to_silver()
+    items_silver = order_items_bronze_to_silver()
+    payments_silver = order_payments_bronze_to_silver()
+
+    orders_dwh = orders_silver_to_dwh()
+    items_dwh = order_items_silver_to_dwh()
+    payments_dwh = order_payments_silver_to_dwh()
+
+    quality_gate = source_quality_gate()
+    analytics = build_order_analytics()
+
+    (
+        [
+            ingest_orders,
+            ingest_order_items,
+            ingest_order_payments,
+        ]
+        >> orders_silver
+        >> orders_dwh
+        >> items_silver
+        >> items_dwh
+        >> payments_silver
+        >> payments_dwh
+        >> quality_gate
+        >> analytics
+    )
 
 
 fastorder_orders_e2e()

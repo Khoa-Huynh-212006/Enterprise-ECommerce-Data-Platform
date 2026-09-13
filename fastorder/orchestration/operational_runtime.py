@@ -118,3 +118,30 @@ def build_orders_mart() -> None:
             "cautious",
         ],
     )
+
+
+def test_all_operational_sources() -> None:
+
+    exec_in_service(
+        "dbt",
+        [
+            "dbt",
+            "test",
+            "--select",
+            "source:staging_operational",
+        ],
+    )
+
+
+def build_operational_models() -> None:
+
+    exec_in_service(
+        "dbt",
+        [
+            "dbt",
+            "build",
+            "--select",
+            "path:models/intermediate/operational",
+            "path:models/marts/core",
+        ],
+    )
