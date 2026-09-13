@@ -143,5 +143,7 @@ def build_operational_models() -> None:
             "--select",
             "path:models/intermediate/operational",
             "path:models/marts/core",
+            "--indirect-selection",
+            "cautious",
         ],
     )
