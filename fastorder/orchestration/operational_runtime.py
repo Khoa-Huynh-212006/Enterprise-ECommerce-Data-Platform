@@ -1,42 +1,81 @@
 from shlex import quote
 
-from fastorder.ingestion.incremental.table_config import get_table_config
-from fastorder.orchestration.docker_runtime import exec_compose_service
+from fastorder.ingestion.incremental.table_config import (
+    get_table_config,
+)
+from fastorder.orchestration.docker_runtime import (
+    exec_in_service,
+)
 
 
 def _validate_table(table_name: str) -> None:
     get_table_config(table_name)
 
 
-def _spark_submit(script_path: str, args: str) -> None:
+def _spark_submit(
+    script_path: str,
+    args: str,
+) -> None:
+
     command = (
         'JARS=$(printf "%s," /opt/spark/ivy/manual-jars/*.jar); '
         'JARS=${JARS%,}; '
-        f'/opt/spark/bin/spark-submit --jars "$JARS" '
-        f'{quote(script_path)} {args}'
+        f'/opt/spark/bin/spark-submit '
+        f'--jars "$JARS" '
+        f'{quote(script_path)} '
+        f'{args}'
     )
-    exec_compose_service("spark", command)
+
+    exec_in_service(
+        "spark",
+        [
+            "sh",
+            "-lc",
+            command,
+        ],
+    )
 
 
-def run_operational_silver(table_name: str) -> None:
+def run_operational_silver(
+    table_name: str,
+) -> None:
+
     _validate_table(table_name)
+
     _spark_submit(
-        "/opt/fastorder-project/fastorder/transformation/silver/operational/run_table.py",
+        "/opt/fastorder-project/"
+        "fastorder/transformation/silver/"
+        "operational/run_table.py",
         f"--table {quote(table_name)}",
     )
 
 
-def load_operational_dwh(table_name: str) -> None:
+def load_operational_dwh(
+    table_name: str,
+) -> None:
+
     _validate_table(table_name)
+
     _spark_submit(
-        "/opt/fastorder-project/fastorder/loading/dwh/run_operational.py",
+        "/opt/fastorder-project/"
+        "fastorder/loading/dwh/"
+        "run_operational.py",
         f"--table {quote(table_name)}",
     )
 
 
-def test_operational_dwh_source(table_name: str) -> None:
+def test_operational_dwh_source(
+    table_name: str,
+) -> None:
+
     _validate_table(table_name)
-    exec_compose_service(
+
+    exec_in_service(
         "dbt",
-        f"dbt test --select source:staging_operational.{quote(table_name)}",
+        [
+            "dbt",
+            "test",
+            "--select",
+            f"source:staging_operational.{table_name}",
+        ],
     )

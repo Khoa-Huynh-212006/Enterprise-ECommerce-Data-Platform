@@ -5,31 +5,11 @@ from airflow.providers.standard.operators.trigger_dagrun import (
     TriggerDagRunOperator,
 )
 
-from fastorder.orchestration.docker_runtime import (
-    exec_in_service,
+from fastorder.orchestration.operational_runtime import (
+    run_operational_silver,
+    load_operational_dwh,
+    test_operational_dwh_source,
 )
-
-
-SPARK_JARS = """
-JARS=$(printf "%s," /opt/spark/ivy/manual-jars/*.jar)
-JARS=${JARS%,}
-"""
-
-SILVER_COMMAND = f"""
-{SPARK_JARS}
-/opt/spark/bin/spark-submit \
-    --jars "$JARS" \
-    /opt/fastorder-project/fastorder/transformation/silver/operational/run_table.py \
-    --table orders
-"""
-
-DWH_COMMAND = f"""
-{SPARK_JARS}
-/opt/spark/bin/spark-submit \
-    --jars "$JARS" \
-    /opt/fastorder-project/fastorder/loading/dwh/run_operational.py \
-    --table orders
-"""
 
 
 @dag(
@@ -57,36 +37,20 @@ def fastorder_orders_e2e():
 
     @task.python
     def orders_bronze_to_silver():
-        exec_in_service(
-            "spark",
-            [
-                "sh",
-                "-lc",
-                SILVER_COMMAND,
-            ],
+        run_operational_silver(
+            "orders"
         )
 
     @task.python
     def orders_silver_to_dwh():
-        exec_in_service(
-            "spark",
-            [
-                "sh",
-                "-lc",
-                DWH_COMMAND,
-            ],
+        load_operational_dwh(
+            "orders"
         )
 
     @task.python
     def test_orders_source():
-        exec_in_service(
-            "dbt",
-            [
-                "dbt",
-                "test",
-                "--select",
-                "source:staging_operational.orders",
-            ],
+        test_operational_dwh_source(
+            "orders"
         )
 
     silver = orders_bronze_to_silver()
