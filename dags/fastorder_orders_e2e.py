@@ -8,127 +8,114 @@ from airflow.providers.standard.operators.trigger_dagrun import (
 from fastorder.orchestration.operational_runtime import (
     run_operational_silver,
     load_operational_dwh,
-    test_operational_dwh_sources,
-    build_orders_mart,
+    test_all_operational_sources,
+    build_operational_models,
 )
 
 
-ORDER_DOMAIN_TABLES = (
+OPERATIONAL_TABLES = (
+    "geolocation",
+    "customers",
+    "warehouses",
     "orders",
+    "products",
+    "sellers",
     "order_items",
+    "order_reviews",
     "order_payments",
+    "product_category_name_translation",
+    "inventory",
 )
 
 
 @dag(
-    dag_id="fastorder_orders_e2e",
+    dag_id="fastorder_operational_e2e",
     start_date=datetime(
         year=2026,
         month=9,
-        day=8,
+        day=13,
         tz="Asia/Ho_Chi_Minh",
     ),
     schedule=None,
     catchup=False,
     max_active_runs=1,
     is_paused_upon_creation=False,
-    tags=["fastorder", "e2e", "orders"],
+    tags=[
+        "fastorder",
+        "e2e",
+        "operational",
+    ],
 )
-def fastorder_orders_e2e():
-
-    ingest_orders = TriggerDagRunOperator(
-        task_id="ingest_orders",
-        trigger_dag_id="incremental_orders_dag",
-        wait_for_completion=True,
-        poke_interval=5,
-    )
-
-    ingest_order_items = TriggerDagRunOperator(
-        task_id="ingest_order_items",
-        trigger_dag_id="incremental_order_items_dag",
-        wait_for_completion=True,
-        poke_interval=5,
-    )
-
-    ingest_order_payments = TriggerDagRunOperator(
-        task_id="ingest_order_payments",
-        trigger_dag_id="incremental_order_payments_dag",
-        wait_for_completion=True,
-        poke_interval=5,
-    )
+def fastorder_operational_e2e():
 
     @task.python
-    def orders_bronze_to_silver():
+    def bronze_to_silver(
+        table_name: str,
+    ):
         run_operational_silver(
-            "orders"
+            table_name
         )
 
     @task.python
-    def order_items_bronze_to_silver():
-        run_operational_silver(
-            "order_items"
-        )
-
-    @task.python
-    def order_payments_bronze_to_silver():
-        run_operational_silver(
-            "order_payments"
-        )
-
-    @task.python
-    def orders_silver_to_dwh():
+    def silver_to_dwh(
+        table_name: str,
+    ):
         load_operational_dwh(
-            "orders"
+            table_name
         )
 
     @task.python
-    def order_items_silver_to_dwh():
-        load_operational_dwh(
-            "order_items"
-        )
+    def test_sources():
+        test_all_operational_sources()
 
     @task.python
-    def order_payments_silver_to_dwh():
-        load_operational_dwh(
-            "order_payments"
+    def build_models():
+        build_operational_models()
+
+    dwh_tasks = []
+
+    for table_name in OPERATIONAL_TABLES:
+
+        ingest = TriggerDagRunOperator(
+            task_id=f"ingest_{table_name}",
+            trigger_dag_id=(
+                f"incremental_{table_name}_dag"
+            ),
+            wait_for_completion=True,
+            poke_interval=5,
         )
 
-    @task.python
-    def source_quality_gate():
-        test_operational_dwh_sources(
-            ORDER_DOMAIN_TABLES
+        silver = bronze_to_silver.override(
+            task_id=(
+                f"{table_name}_bronze_to_silver"
+            ),
+            pool="spark_local",
+        )(
+            table_name
         )
 
-    @task.python
-    def build_order_analytics():
-        build_orders_mart()
+        dwh = silver_to_dwh.override(
+            task_id=(
+                f"{table_name}_silver_to_dwh"
+            ),
+            pool="spark_local",
+        )(
+            table_name
+        )
 
-    orders_silver = orders_bronze_to_silver()
-    items_silver = order_items_bronze_to_silver()
-    payments_silver = order_payments_bronze_to_silver()
+        ingest >> silver >> dwh
 
-    orders_dwh = orders_silver_to_dwh()
-    items_dwh = order_items_silver_to_dwh()
-    payments_dwh = order_payments_silver_to_dwh()
+        dwh_tasks.append(
+            dwh
+        )
 
-    quality_gate = source_quality_gate()
-    analytics = build_order_analytics()
+    source_quality = test_sources()
+    marts = build_models()
 
-    (
-        [
-            ingest_orders,
-            ingest_order_items,
-            ingest_order_payments,
-        ]
-        >> orders_silver
-        >> orders_dwh
-        >> items_silver
-        >> items_dwh
-        >> payments_silver
-        >> payments_dwh
-        >> quality_gate
-        >> analytics
-    )
+    for dwh_task in dwh_tasks:
+        dwh_task >> source_quality
+
+    source_quality >> marts
 
 
-fastorder_orders_e2e()
+fastorder_operational_e2e()
