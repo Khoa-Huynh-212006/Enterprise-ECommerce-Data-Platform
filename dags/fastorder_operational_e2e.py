@@ -82,6 +82,7 @@ def fastorder_operational_e2e():
                 f"incremental_{table_name}_dag"
             ),
             wait_for_completion=True,
+            deferrable=True,
             poke_interval=5,
         )
 

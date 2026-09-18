@@ -1,4 +1,4 @@
-﻿import pendulum
+import pendulum
 
 from airflow.providers.standard.operators.trigger_dagrun import (
     TriggerDagRunOperator,
@@ -35,6 +35,7 @@ def fastorder_clickstream_e2e():
         task_id="ingest_clickstream",
         trigger_dag_id="yoochoose_file_ingestion",
         wait_for_completion=True,
+        deferrable=True,
         poke_interval=5,
     )
 

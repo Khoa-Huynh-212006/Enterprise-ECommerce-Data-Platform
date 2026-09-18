@@ -1,4 +1,4 @@
-﻿from pendulum import datetime
+from pendulum import datetime
 
 from airflow.sdk import dag, task
 from airflow.providers.standard.operators.trigger_dagrun import (
@@ -60,6 +60,7 @@ def fastorder_weather_forecast_e2e():
         task_id="ingest_forecast",
         trigger_dag_id="weather_forecast_ingestion",
         wait_for_completion=True,
+        deferrable=True,
         poke_interval=5,
     )
 

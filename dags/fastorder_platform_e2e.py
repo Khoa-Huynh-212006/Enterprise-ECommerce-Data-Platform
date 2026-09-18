@@ -1,4 +1,4 @@
-﻿import pendulum
+import pendulum
 
 from airflow.providers.standard.operators.trigger_dagrun import (
     TriggerDagRunOperator,
@@ -28,6 +28,7 @@ def fastorder_platform_e2e():
         task_id="operational_domain",
         trigger_dag_id="fastorder_operational_e2e",
         wait_for_completion=True,
+        deferrable=True,
         poke_interval=5,
     )
 
@@ -35,6 +36,7 @@ def fastorder_platform_e2e():
         task_id="weather_forecast_domain",
         trigger_dag_id="fastorder_weather_forecast_e2e",
         wait_for_completion=True,
+        deferrable=True,
         poke_interval=5,
     )
 
@@ -42,6 +44,7 @@ def fastorder_platform_e2e():
         task_id="clickstream_domain",
         trigger_dag_id="fastorder_clickstream_e2e",
         wait_for_completion=True,
+        deferrable=True,
         poke_interval=5,
     )
 
