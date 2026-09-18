@@ -1,9 +1,13 @@
-import pendulum
+﻿import pendulum
 
 from airflow.providers.standard.operators.trigger_dagrun import (
     TriggerDagRunOperator,
 )
-from airflow.sdk import dag
+from airflow.sdk import dag, task
+
+from fastorder.orchestration.platform_runtime import (
+    validate_platform,
+)
 
 
 @dag(
@@ -48,11 +52,17 @@ def fastorder_platform_e2e():
         poke_interval=5,
     )
 
-    [
-        operational,
-        weather_forecast,
-        clickstream,
-    ]
+    @task.python(
+        task_id="final_platform_validation",
+    )
+    def final_platform_validation():
+        validate_platform()
+
+    validation = final_platform_validation()
+
+    operational >> validation
+    weather_forecast >> validation
+    clickstream >> validation
 
 
 fastorder_platform_e2e()
