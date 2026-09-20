@@ -11,5 +11,12 @@
         "**/__pycache__": true,
         "**/logs": true,
         "**/data/raw": true
-    }
+    },
+    "python-envs.pythonProjects": [
+        {
+            "path": "docs",
+            "envManager": "ms-python.python:venv",
+            "packageManager": "ms-python.python:pip"
+        }
+    ]
 }

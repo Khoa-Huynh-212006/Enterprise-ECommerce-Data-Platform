@@ -1,6 +1,6 @@
 from pendulum import datetime
 
-from airflow.sdk import dag, task
+from airflow.sdk import TaskGroup, dag, task
 from airflow.providers.standard.operators.trigger_dagrun import (
     TriggerDagRunOperator,
 )
@@ -76,47 +76,66 @@ def fastorder_operational_e2e():
 
     for table_name in OPERATIONAL_TABLES:
 
-        ingest = TriggerDagRunOperator(
-            task_id=f"ingest_{table_name}",
-            trigger_dag_id=(
-                f"incremental_{table_name}_dag"
-            ),
-            wait_for_completion=True,
-            deferrable=True,
-            poke_interval=5,
-        )
-
-        silver = bronze_to_silver.override(
-            task_id=(
-                f"{table_name}_bronze_to_silver"
-            ),
-            pool="spark_local",
-        )(
+        display_name = (
             table_name
+            .replace("_", " ")
+            .title()
         )
 
-        dwh = silver_to_dwh.override(
-            task_id=(
-                f"{table_name}_silver_to_dwh"
+        with TaskGroup(
+            group_id=table_name,
+            group_display_name=display_name,
+            tooltip=(
+                f"Operational pipeline for {table_name}"
             ),
-            pool="spark_local",
-        )(
-            table_name
-        )
+        ):
 
-        ingest >> silver >> dwh
+            ingest = TriggerDagRunOperator(
+                task_id="ingest",
+                trigger_dag_id=(
+                    f"incremental_{table_name}_dag"
+                ),
+                wait_for_completion=True,
+                deferrable=True,
+                poke_interval=5,
+            )
+
+            silver = bronze_to_silver.override(
+                task_id="bronze_to_silver",
+                pool="spark_local",
+            )(
+                table_name
+            )
+
+            dwh = silver_to_dwh.override(
+                task_id="silver_to_dwh",
+                pool="spark_local",
+            )(
+                table_name
+            )
+
+            ingest >> silver >> dwh
 
         dwh_tasks.append(
             dwh
         )
 
-    source_quality = test_sources()
-    marts = build_models()
+    with TaskGroup(
+        group_id="analytics",
+        group_display_name="Quality & Marts",
+        tooltip=(
+            "Validate operational sources "
+            "and build dbt models"
+        ),
+    ) as analytics:
+
+        source_quality = test_sources()
+        marts = build_models()
+
+        source_quality >> marts
 
     for dwh_task in dwh_tasks:
-        dwh_task >> source_quality
-
-    source_quality >> marts
+        dwh_task >> analytics
 
 
 fastorder_operational_e2e()

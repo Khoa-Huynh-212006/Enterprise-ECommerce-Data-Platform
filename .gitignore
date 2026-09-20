@@ -220,6 +220,7 @@ __marimo__/
 data/raw/yoochoose/
 data/replay/yoochoose
 state/file_based
+data/raw/olist
 
 data
 # Local runtime dependencies
@@ -228,3 +229,5 @@ data
 # Local runtime state
 logs/
 state/
+
+*.pbix
