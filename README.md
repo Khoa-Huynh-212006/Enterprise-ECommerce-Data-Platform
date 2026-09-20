@@ -937,7 +937,7 @@ Các phân tích hiện có:
 - Top Products;
 - Warehouse Performance.
 
-![FastOrder Executive Overview](assets/dashboard-executive-overview.jpg)
+![FastOrder Executive Overview](assets/dashboard-executive-overview.png)
 
 File `.pbix` không được lưu trong normal Git history do kích thước lớn.
 
@@ -1141,7 +1141,7 @@ Enterprise-ECommerce-Data-Platform/
 │
 ├── assets/
 │   ├── fastorder-architecture.jpg
-│   ├── dashboard-executive-overview.jpg
+│   ├── dashboard-executive-overview.png
 │   ├── airflow-platform-e2e.jpg
 │   ├── airflow-operational-taskgroups1.jpg
 │   ├── airflow-operational-taskgroups2.jpg
