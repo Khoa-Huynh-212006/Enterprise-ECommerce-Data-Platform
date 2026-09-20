@@ -1,8 +1,0 @@
-{
-    "version": 1,
-    "table_name": "sellers",
-    "watermark": {
-        "updated_at": "2026-08-06T09:13:56.155074",
-        "seller_id": "ffff564a4f9085cd26170f4732393726"
-    }
-}

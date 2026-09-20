@@ -1,8 +1,0 @@
-{
-    "version": 1,
-    "table_name": "product_category_name_translation",
-    "watermark": {
-        "updated_at": "2026-08-06T09:13:56.155074",
-        "product_category_name": "utilidades_domesticas"
-    }
-}

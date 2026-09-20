@@ -1,8 +1,0 @@
-{
-    "version": 1,
-    "table_name": "orders",
-    "watermark": {
-        "updated_at": "2026-09-19T16:04:58.229357",
-        "order_id": "fffe41c64501cc87c801fd61db3f6244"
-    }
-}

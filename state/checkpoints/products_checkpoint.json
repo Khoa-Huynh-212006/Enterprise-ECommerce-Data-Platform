@@ -1,8 +1,0 @@
-{
-    "version": 1,
-    "table_name": "products",
-    "watermark": {
-        "updated_at": "2026-08-06T09:13:56.155074",
-        "product_id": "fffe9eeff12fcbd74a2f2b007dde0c58"
-    }
-}

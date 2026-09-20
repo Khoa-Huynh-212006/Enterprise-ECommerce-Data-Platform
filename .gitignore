@@ -231,3 +231,22 @@ logs/
 state/
 
 *.pbix
+
+
+# IDE local settings
+.vscode/
+
+# dbt local/generated
+dbt/profiles.yml
+dbt/.user.yml
+dbt/logs/
+dbt/target/
+
+# Jupyter development artifacts
+notebooks/
+
+# Local runtime state
+state/
+
+# Power BI
+*.pbix

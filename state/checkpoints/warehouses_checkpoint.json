@@ -1,8 +1,0 @@
-{
-    "version": 1,
-    "table_name": "warehouses",
-    "watermark": {
-        "updated_at": "2026-08-06T09:17:07.655969",
-        "warehouse_id": "WH_HP"
-    }
-}
