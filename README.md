@@ -1,27 +1,46 @@
 # FastOrder — Enterprise E-Commerce Data Platform
 
-FastOrder is a **local-first, end-to-end Data Engineering platform** built to simulate the data infrastructure of a B2C e-commerce marketplace.
+FastOrder là một **nền tảng Data Engineering end-to-end, local-first** được xây dựng để mô phỏng hạ tầng dữ liệu của một doanh nghiệp thương mại điện tử B2C.
 
-The project goes beyond a traditional `CSV → ETL → Dashboard` workflow.  
-It models multiple real-world data ingestion patterns, a Medallion-style lake architecture, analytical warehouse modeling, orchestration, data quality, and BI consumption.
+Project không dừng ở mô hình đơn giản:
+
+```text
+CSV → ETL → Dashboard
+```
+
+mà mô phỏng nhiều vấn đề thực tế hơn của một data platform:
+
+- nhiều loại source khác nhau;
+- incremental ingestion;
+- file-based ingestion;
+- API ingestion;
+- data lake;
+- Spark transformation;
+- Data Warehouse;
+- dimensional modeling;
+- orchestration;
+- data quality;
+- BI consumption.
 
 ---
 
-## Project Overview
+## Tổng quan project
 
-FastOrder was designed around a simulated e-commerce business with:
+FastOrder được thiết kế như một marketplace thương mại điện tử giả lập gồm:
 
-- customers;
-- products;
-- sellers;
-- orders and order items;
-- payments and reviews;
-- inventory;
-- 5 warehouses;
-- weather context;
-- clickstream behavior.
+- khách hàng;
+- sản phẩm;
+- người bán;
+- đơn hàng;
+- chi tiết đơn hàng;
+- thanh toán;
+- đánh giá;
+- tồn kho;
+- 5 warehouse;
+- dữ liệu thời tiết;
+- dữ liệu hành vi clickstream.
 
-The platform integrates three main data domains:
+Platform hiện tích hợp ba data domain chính:
 
 ```text
 Operational Commerce
@@ -29,11 +48,11 @@ Weather
 Clickstream
 ```
 
-Each domain has its own ingestion pattern, but all of them converge into a shared analytical warehouse.
+Mỗi domain có cách ingestion khác nhau nhưng cuối cùng cùng hội tụ về một analytical warehouse chung.
 
 ---
 
-## Architecture
+## Kiến trúc tổng quát
 
 ```mermaid
 flowchart LR
@@ -59,40 +78,40 @@ flowchart LR
     J --> K[Power BI]
 ```
 
-### Current Technology Stack
+### Technology Stack hiện tại
 
-| Layer | Technology |
+| Giai đoạn | Công nghệ |
 |---|---|
 | Operational Database | PostgreSQL 16 |
 | Orchestration | Apache Airflow 3.3 |
 | Executor | CeleryExecutor |
-| Queue | Redis |
+| Message Broker | Redis |
 | Object Storage | MinIO |
 | Bronze Serialization | PyArrow + Parquet |
-| Processing | Apache Spark / PySpark 3.5.9 |
+| Data Processing | Apache Spark / PySpark 3.5.9 |
 | Table Format | Delta Lake OSS |
 | Analytical Warehouse | PostgreSQL 16 |
 | Transformation | dbt Core |
 | BI | Power BI Desktop |
-| Runtime | Docker Compose |
+| Local Runtime | Docker Compose |
 
 ---
 
-## Data Domains
+## Các data domain
 
 ### 1. Operational Commerce
 
-Operational data is seeded from Olist and loaded into the FastOrder PostgreSQL OLTP database.
+Dữ liệu Olist được sử dụng như seed data để khởi tạo FastOrder PostgreSQL OLTP.
 
-FastOrder then performs incremental ingestion using:
+Sau khi bootstrap, PostgreSQL trở thành source operational chính.
+
+FastOrder thực hiện incremental ingestion dựa trên composite watermark:
 
 ```text
 (updated_at, primary_key...)
 ```
 
-as a composite watermark.
-
-The operational pipeline covers 11 tables:
+Operational domain hiện gồm 11 bảng:
 
 ```text
 customers
@@ -108,31 +127,31 @@ geolocation
 product_category_name_translation
 ```
 
-End-to-end flow:
+Luồng end-to-end:
 
 ```text
-PostgreSQL
-    ↓
+PostgreSQL OLTP
+        ↓
 Airflow Incremental Ingestion
-    ↓
+        ↓
 MinIO Bronze
-    ↓
-Spark + Delta Silver
-    ↓
+        ↓
+Spark + Delta Lake Silver
+        ↓
 PostgreSQL DWH
-    ↓
+        ↓
 dbt
-    ↓
+        ↓
 Fact / Dimension Marts
 ```
 
-The ingestion framework supports:
+Incremental ingestion framework hỗ trợ:
 
-- composite watermark extraction;
-- upper watermark isolation;
-- checkpoints;
+- composite watermark;
+- upper watermark;
+- checkpoint;
 - pending recovery;
-- replay-safe execution;
+- replay-safe rerun;
 - no-new-data `NO_OP`;
 - deterministic ingestion identity.
 
@@ -140,20 +159,20 @@ The ingestion framework supports:
 
 ### 2. Weather
 
-Weather data is collected from Open-Meteo for five FastOrder warehouses.
+FastOrder thu thập dữ liệu thời tiết từ Open-Meteo cho 5 warehouse.
 
-Two flows are implemented:
+Hai luồng được triển khai:
 
 ```text
 Forecast
 Historical Forecast
 ```
 
-Forecast is used for recurring ingestion.
+Forecast được sử dụng cho ingestion định kỳ.
 
-Historical Forecast is used as a bootstrap/backfill workflow.
+Historical Forecast được sử dụng cho bootstrap/backfill.
 
-Weather Bronze preserves the original provider response:
+Weather Bronze giữ nguyên provider response theo cấu trúc:
 
 ```text
 response.json
@@ -161,7 +180,7 @@ metadata.json
 _SUCCESS
 ```
 
-Current analytical marts:
+Các analytical marts hiện tại:
 
 ```text
 fact_weather_forecast_hourly
@@ -172,17 +191,17 @@ fact_weather_historical_forecast_hourly
 
 ### 3. Clickstream
 
-FastOrder integrates the YOOCHOOSE clickstream dataset using a dedicated file-based ingestion framework.
+FastOrder tích hợp bộ dữ liệu YOOCHOOSE để mô phỏng hành vi người dùng.
 
-Dataset scale:
+Quy mô dữ liệu:
 
 ```text
-~33.0 million click events
-183 event dates
-~9.25 million sessions
+~33.0 triệu click events
+183 ngày dữ liệu
+~9.25 triệu sessions
 ```
 
-File ingestion uses:
+Clickstream sử dụng một file-based ingestion framework riêng:
 
 ```text
 File Discovery
@@ -192,7 +211,7 @@ Manifest Manager
 Bronze Writer
 ```
 
-Manifest states include:
+Các trạng thái manifest:
 
 ```text
 NEW
@@ -201,7 +220,7 @@ PROCESSED
 RETRY
 ```
 
-Clickstream analytical models:
+Các analytical models chính:
 
 ```text
 int_clickstream_sessions
@@ -209,13 +228,25 @@ fact_clickstream_sessions
 agg_clickstream_daily
 ```
 
-FastOrder deliberately does **not** join YOOCHOOSE `item_id` with Olist/FastOrder `product_id`, because no valid shared business key exists between the datasets.
+FastOrder chủ động **không join**:
+
+```text
+YOOCHOOSE item_id
+```
+
+với:
+
+```text
+FastOrder / Olist product_id
+```
+
+vì không có shared business key hợp lệ giữa hai dataset.
 
 ---
 
 ## Analytical Model
 
-The analytical layer follows a dimensional model.
+Analytical layer được thiết kế theo dimensional model.
 
 ### Dimensions
 
@@ -248,23 +279,21 @@ fact_weather_forecast_hourly
 fact_weather_historical_forecast_hourly
 ```
 
-Relationships follow:
+Relationship tuân theo:
 
 ```text
 Dimension 1 → * Fact
 ```
 
-with single-direction filtering.
+và sử dụng single-direction filtering.
 
-Fact-to-fact relationships are intentionally avoided.
+Fact-to-fact relationship được tránh để giảm ambiguity và giữ đúng grain semantics.
 
 ---
 
-## Data Scale
+## Quy mô dữ liệu hiện tại
 
-Current analytical data includes approximately:
-
-| Dataset | Rows |
+| Dataset | Số dòng |
 |---|---:|
 | Orders | 99,492 |
 | Order Items | 112,843 |
@@ -279,7 +308,7 @@ Current analytical data includes approximately:
 
 ## End-to-End Orchestration
 
-Each domain has its own certified Airflow E2E DAG.
+Mỗi domain có một Airflow E2E DAG riêng.
 
 ```text
 Operational E2E ────────────┐
@@ -289,29 +318,29 @@ Weather Forecast E2E ───────┼──► Final Platform Validation
 Clickstream E2E ────────────┘
 ```
 
-The top-level DAG is:
+Top-level DAG:
 
 ```text
 fastorder_platform_e2e
 ```
 
-Historical weather is intentionally excluded from the normal recurring platform run because it is treated as a backfill/bootstrap workflow.
+Historical weather được giữ ngoài normal recurring platform run vì được xem là bootstrap/backfill workflow.
 
-The master DAG ends with:
+Sau khi các domain hoàn thành, master DAG chạy:
 
 ```text
 dbt test
 ```
 
-to validate the analytical layer after all participating domains finish.
+để xác nhận analytical layer vẫn hợp lệ trên toàn platform.
 
 ---
 
 ## Airflow Operational Design
 
-Operational E2E tasks are organized using TaskGroups.
+Operational E2E được tổ chức bằng TaskGroup theo từng entity.
 
-Example:
+Ví dụ:
 
 ```text
 orders
@@ -320,23 +349,31 @@ orders
 └── silver_to_dwh
 ```
 
-Heavy Spark execution is isolated from normal Airflow Python execution.
+Heavy Spark workload không chạy trực tiếp trong Airflow Python process.
 
-A dedicated Airflow pool:
+Airflow worker sử dụng Docker execution boundary để gọi Spark runtime riêng.
+
+FastOrder cũng sử dụng Airflow pool:
 
 ```text
 spark_local
 ```
 
-limits concurrent Spark workloads on the local development machine.
+với:
 
-Master DAG triggers are configured as deferrable so Airflow workers are not occupied while waiting for child DAGs.
+```text
+1 slot
+```
+
+để tránh nhiều Spark job nặng chạy đồng thời trên môi trường local.
+
+Master DAG sử dụng deferrable triggers để không giữ worker slot trong lúc chờ child DAG hoàn thành.
 
 ---
 
-## Data Warehouse & dbt
+## Data Warehouse và dbt
 
-The DWH contains three logical layers:
+PostgreSQL DWH gồm ba logical layer:
 
 ```text
 staging
@@ -344,7 +381,7 @@ intermediate
 marts
 ```
 
-Examples of intermediate models:
+Một số intermediate models:
 
 ```text
 int_order_items_agg
@@ -353,28 +390,28 @@ int_orders_enriched
 int_clickstream_sessions
 ```
 
-dbt is responsible for:
+dbt chịu trách nhiệm:
 
-- analytical SQL transformations;
-- fact and dimension construction;
+- analytical SQL transformation;
+- Fact / Dimension modeling;
 - business-grain validation;
 - source tests;
 - model tests;
 - analytical marts.
 
-Spark remains primarily responsible for:
+Spark chủ yếu chịu trách nhiệm:
 
 ```text
 Bronze → Silver
 ```
 
-while dbt owns relational analytical modeling.
+Trong khi dbt chịu trách nhiệm cho relational analytical modeling.
 
 ---
 
 ## Power BI
 
-Power BI connects to:
+Power BI kết nối trực tiếp tới:
 
 ```text
 PostgreSQL DWH
@@ -382,29 +419,35 @@ PostgreSQL DWH
 marts
 ```
 
-rather than directly querying operational or lake-layer data.
+thay vì đọc trực tiếp từ:
 
-### FastOrder Executive Overview
+```text
+OLTP
+Bronze
+Silver
+```
 
-The current BI v1 implements an Executive Overview containing:
+### Executive Overview
+
+Power BI v1 hiện có một Executive Overview tập trung vào:
 
 - Total Revenue;
 - Total Orders;
 - Total Customers;
 - Average Order Value;
 - Items Sold;
-- dynamic metric trends;
-- customer-state analysis;
-- order-status distribution;
-- product-category performance;
-- warehouse performance;
-- top-product analysis.
+- Dynamic Metric Trend;
+- Customer State Analysis;
+- Order Status Distribution;
+- Product Category Performance;
+- Top Products;
+- Warehouse Performance.
 
-> The Power BI `.pbix` file is intentionally not stored in normal Git history because of its file size. Dashboard screenshots are included instead.
+> File `.pbix` không được lưu trực tiếp trong Git history thông thường vì kích thước lớn. Repo chỉ lưu hình ảnh dashboard để minh họa kết quả cuối cùng.
 
 ![FastOrder Executive Overview](assets/dashboard-executive-overview.png)
 
-Future BI pages may include:
+Các dashboard page dự kiến trong tương lai:
 
 ```text
 Product & Seller Performance
@@ -413,17 +456,17 @@ Digital Behavior
 Weather & Operations Context
 ```
 
-They are not part of the FastOrder v1 completion boundary.
+Các page này không nằm trong phạm vi hoàn thành của FastOrder v1.
 
 ---
 
 ## Warehouse Simulation
 
-The original Olist dataset does not provide warehouse assignments compatible with the FastOrder business model.
+Olist gốc không cung cấp warehouse assignment phù hợp với FastOrder business model.
 
-Because Olist is treated as the seed of FastOrder's simulated backend, missing warehouse assignments are enriched deterministically.
+Do Olist được xem như seed data của backend FastOrder giả lập, các order thiếu warehouse được enrich bằng deterministic assignment.
 
-Target distribution:
+Phân bố mục tiêu:
 
 ```text
 WH_HCM ≈ 30%
@@ -433,58 +476,64 @@ WH_CT  ≈ 15%
 WH_HP  ≈ 10%
 ```
 
-The assignment is deterministic so the same order always maps to the same warehouse across reruns.
+Cùng một order luôn được map về cùng một warehouse giữa các lần chạy lại.
 
-This is explicitly treated as **FastOrder synthetic operational data**, not original Olist truth.
+Warehouse assignment này là:
+
+```text
+FastOrder synthetic operational data
+```
+
+không phải dữ liệu gốc được quan sát từ Olist.
 
 ---
 
-## Reliability & Data Quality
+## Reliability và Data Quality
 
-The platform implements several reliability mechanisms:
+Platform triển khai nhiều cơ chế để tăng độ tin cậy.
 
-### Ingestion
+### Ingestion Layer
 
 - composite watermark;
-- upper-watermark isolation;
-- checkpointing;
+- upper watermark isolation;
+- checkpoint;
 - pending recovery;
-- deterministic identities;
-- replay-safe reruns.
+- deterministic identity;
+- replay-safe rerun.
 
-### Bronze
+### Bronze Layer
 
-- source fidelity;
-- explicit ingestion metadata;
+- giữ source fidelity;
+- technical ingestion metadata;
 - append-oriented storage.
 
-### Silver
+### Silver Layer
 
 - schema normalization;
 - deduplication;
 - business-grain validation;
 - data-quality checks.
 
-### DWH
+### DWH Layer
 
-- temporary load staging;
-- validation before target replacement;
+- temporary load table;
+- validation trước khi thay đổi target;
 - transactional finalization.
 
-### dbt
+### dbt Layer
 
 - source tests;
 - uniqueness tests;
 - not-null tests;
-- business-grain validation.
+- business-grain tests.
 
 ---
 
-## Project Evolution
+## Quá trình phát triển kiến trúc
 
-FastOrder did not start with its current architecture.
+FastOrder không bắt đầu trực tiếp với kiến trúc local hiện tại.
 
-During August 2026, parts of the platform were successfully developed using:
+Trong tháng 8/2026, một phần platform từng được triển khai trên Azure với:
 
 ```text
 Azure Data Lake Storage Gen2
@@ -494,7 +543,7 @@ Managed Identity
 Unity Catalog
 ```
 
-The project was later migrated to a fully local-first architecture:
+Sau đó project được chuyển sang local-first architecture:
 
 ```text
 ADLS
@@ -505,18 +554,18 @@ Databricks
     ↓
 Local Spark
 
-Cloud-oriented analytics target
+Cloud-oriented analytical target
     ↓
 PostgreSQL DWH
 ```
 
-The migration preserved the core ingestion and transformation concepts while removing cloud billing and account dependencies.
+Việc migration giữ lại các nguyên tắc ingestion và transformation đã được thiết kế trước đó, nhưng loại bỏ cloud billing và account dependency.
 
-Historical decisions are preserved in the project Decision Log.
+Các quyết định lịch sử vẫn được giữ trong Decision Log.
 
 ---
 
-## Repository Structure
+## Cấu trúc repository
 
 ```text
 Enterprise-ECommerce-Data-Platform/
@@ -536,10 +585,10 @@ Enterprise-ECommerce-Data-Platform/
 │   └── PostgreSQL schema artifacts
 │
 ├── dbt/
-│   └── dbt models and tests
+│   └── dbt models và tests
 │
 ├── docker/
-│   └── Local platform infrastructure
+│   └── local platform infrastructure
 │
 ├── docs/
 │   ├── 01-data-flows.md
@@ -554,116 +603,119 @@ Enterprise-ECommerce-Data-Platform/
 
 ---
 
-## Documentation
+## Tài liệu chi tiết
 
-Detailed documentation is intentionally kept small and focused.
+Bộ tài liệu được giữ nhỏ và mỗi file có một trách nhiệm rõ ràng.
 
 ### Data Flow
 
 [01 — Data Flows](docs/01-data-flows.md)
 
-Explains how Operational, Weather and Clickstream data move through the platform.
+Mô tả cách dữ liệu Operational, Weather và Clickstream di chuyển xuyên suốt platform.
 
 ### Business & Analytics
 
 [02 — Business Analytics](docs/02-business-analytics.md)
 
-Explains FastOrder's business context, stakeholders, analytical requirements and KPI boundaries.
+Mô tả business context, stakeholders, analytical requirements và KPI boundaries.
 
 ### Technology Architecture
 
 [03 — Technology Architecture](docs/03-technology-architecture.md)
 
-Explains which technologies are used at each stage and how the current local-first architecture is structured.
+Mô tả công nghệ được sử dụng tại từng layer và current local-first architecture.
 
 ### Analytical Schema
 
 [04 — OLAP Schema](docs/04-olap-schema.md)
 
-Describes Facts, Dimensions, grains and relationships.
+Mô tả Fact, Dimension, grain và relationships.
 
-### Decisions
+### Decision Log
 
 [05 — Decision Log](docs/05-decision-log.md)
 
-Records the major architectural decisions and superseded approaches.
+Lưu các quyết định kiến trúc quan trọng và các phương án đã bị superseded.
 
-### Timeline
+### Project Timeline
 
 [06 — Project Timeline](docs/06-project-timeline.md)
 
-Documents the project's evolution from July 2026 through FastOrder v1.
+Lưu quá trình phát triển FastOrder từ cuối tháng 7/2026 đến FastOrder v1.
 
 ---
 
-## Key Engineering Lessons
+## Một số nguyên tắc Data Engineering rút ra từ project
 
-FastOrder reinforced several Data Engineering principles:
+FastOrder được xây dựng dựa trên các nguyên tắc:
 
 ```text
-Business requirements before tools.
+Business requirement đi trước technology.
 
-Bronze should preserve source fidelity.
+Bronze phải giữ source fidelity.
 
-Exactly-once should not be claimed without the architecture to guarantee it.
+Không tuyên bố Exactly-Once nếu kiến trúc không thực sự đảm bảo điều đó.
 
-Replay safety is often more practical than pretending retries never happen.
+Replay-safe thường thực tế hơn việc giả định retry sẽ không xảy ra.
 
-Every Fact must have a clearly defined grain.
+Mỗi Fact phải có business grain rõ ràng.
 
-A relationship should exist because the business keys support it,
-not because a dashboard needs another chart.
+Relationship chỉ tồn tại khi có business key hợp lệ.
 
-Spark and SQL/dbt solve different classes of transformations.
+Không ép relationship chỉ để tạo thêm dashboard.
 
-Orchestration should coordinate workloads, not contain all business logic.
+Spark và dbt giải quyết các nhóm bài toán khác nhau.
 
-A smaller reproducible architecture is often more valuable than
-a larger architecture that cannot be maintained.
+Airflow chịu trách nhiệm orchestration,
+không phải toàn bộ business logic.
+
+Một architecture nhỏ nhưng reproducible
+có giá trị hơn một architecture lớn nhưng khó duy trì.
 ```
 
 ---
 
-## Current Status
+## Trạng thái hiện tại
 
 ```text
-Operational Pipeline       ✅ Complete
-Weather Forecast Pipeline  ✅ Complete
-Weather Historical Flow    ✅ Complete
-Clickstream Pipeline       ✅ Complete
-PostgreSQL DWH             ✅ Complete
-dbt Analytical Layer       ✅ Complete
-Platform E2E Orchestration ✅ Complete
-Power BI Executive View    ✅ Complete
-Documentation              ✅ Complete
+Operational Pipeline       ✅ Hoàn thành
+Weather Forecast Pipeline  ✅ Hoàn thành
+Weather Historical Flow    ✅ Hoàn thành
+Clickstream Pipeline       ✅ Hoàn thành
+PostgreSQL DWH             ✅ Hoàn thành
+dbt Analytical Layer       ✅ Hoàn thành
+Platform E2E Orchestration ✅ Hoàn thành
+Power BI Executive View    ✅ Hoàn thành
+Documentation              ✅ Hoàn thành
 ```
 
-FastOrder v1 is considered complete as an end-to-end Data Engineering portfolio project.
+FastOrder v1 được xem là hoàn thành ở mức một **end-to-end Data Engineering portfolio project**.
 
 ---
 
-## Future Improvements
+## Hướng phát triển tiếp theo
 
-Potential future work includes:
+Một số hướng có thể tiếp tục trong tương lai:
 
-- Kafka / event-streaming integration;
-- real log-based CDC;
+- Kafka / Event Streaming;
+- log-based CDC;
 - CI/CD;
 - automated data observability;
 - cloud deployment;
-- additional Power BI pages;
+- thêm Power BI pages;
 - inventory analytics;
-- shared customer/product identities across behavioral and transaction systems;
-- more realistic warehouse routing.
+- shared identity giữa clickstream và transactional systems;
+- warehouse routing thực tế hơn.
 
-These items are intentionally outside the FastOrder v1 Definition of Done.
+Các hạng mục này không nằm trong Definition of Done của FastOrder v1.
 
 ---
 
-## Author
+## Tác giả
 
 **Huỳnh Đăng Khoa**
 
-Information Systems — University of Information Technology, VNU-HCM
+Sinh viên ngành Hệ thống Thông tin  
+Trường Đại học Công nghệ Thông tin — ĐHQG TP.HCM
 
-Data Engineering Portfolio Project — 2026
+**Data Engineering Portfolio Project — 2026**
