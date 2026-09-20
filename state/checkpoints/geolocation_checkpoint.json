@@ -1,8 +1,0 @@
-{
-    "version": 1,
-    "table_name": "geolocation",
-    "watermark": {
-        "updated_at": "2026-08-06T09:13:56.155074",
-        "geolocation_id": 1000163
-    }
-}

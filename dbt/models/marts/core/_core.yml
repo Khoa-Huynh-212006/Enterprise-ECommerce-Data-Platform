@@ -1,0 +1,220 @@
+version: 2
+
+models:
+  - name: dim_customers
+    description: "Customer dimension. Grain: một dòng cho mỗi customer_id."
+    columns:
+      - name: customer_id
+        data_tests:
+          - not_null
+          - unique
+      - name: customer_unique_id
+        data_tests:
+          - not_null
+
+  - name: dim_products
+    description: "Product dimension với thông tin category đã enrich."
+    columns:
+      - name: product_id
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_sellers
+    description: "Seller dimension. Grain: một dòng cho mỗi seller_id."
+    columns:
+      - name: seller_id
+        data_tests:
+          - not_null
+          - unique
+
+  - name: dim_warehouses
+    description: "Warehouse dimension của mạng lưới FastOrder."
+    columns:
+      - name: warehouse_id
+        data_tests:
+          - not_null
+          - unique
+      - name: city
+        data_tests:
+          - not_null
+      - name: region
+        data_tests:
+          - not_null
+
+  - name: fact_orders
+    description: "Order fact table. Grain: một dòng cho mỗi order."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: customer_id
+        data_tests:
+          - not_null
+
+      - name: order_status
+        data_tests:
+          - not_null
+
+      - name: order_purchase_timestamp
+        data_tests:
+          - not_null
+
+      - name: order_count
+        data_tests:
+          - not_null
+
+      - name: has_items
+        data_tests:
+          - not_null
+
+      - name: has_payment
+        data_tests:
+          - not_null
+
+      - name: is_delivered
+        data_tests:
+          - not_null
+
+      - name: purchase_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: approved_date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: carrier_date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: delivered_date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: estimated_delivery_date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+  - name: fact_order_items
+    description: "Order item fact table. Grain: một dòng cho mỗi order_id và order_item_id."
+
+    columns:
+      - name: order_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('fact_orders')
+                field: order_id
+
+      - name: order_item_id
+        data_tests:
+          - not_null
+
+      - name: customer_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_customers')
+                field: customer_id
+
+      - name: product_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_products')
+                field: product_id
+
+      - name: seller_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_sellers')
+                field: seller_id
+
+      - name: warehouse_id
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_warehouses')
+                field: warehouse_id
+
+      - name: quantity
+        data_tests:
+          - not_null
+
+      - name: unit_price
+        data_tests:
+          - not_null
+
+      - name: freight_value
+        data_tests:
+          - not_null
+
+      - name: merchandise_value
+        data_tests:
+          - not_null
+
+      - name: item_line_count
+        data_tests:
+          - not_null
+      - name: purchase_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: shipping_limit_date_key
+        data_tests:
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+  - name: dim_date
+    description: "Conformed calendar dimension dùng chung cho các business process của FastOrder."
+    columns:
+      - name: date_key
+        data_tests:
+          - not_null
+          - unique
+
+      - name: date_day
+        data_tests:
+          - not_null
+          - unique
+
+      - name: year
+        data_tests:
+          - not_null
+
+      - name: month
+        data_tests:
+          - not_null
+
+      - name: day_of_week
+        data_tests:
+          - not_null

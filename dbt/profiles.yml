@@ -1,0 +1,13 @@
+fastorder_dwh:
+  target: dev
+
+  outputs:
+    dev:
+      type: postgres
+      host: "{{ env_var('DWH_DB_HOST') }}"
+      port: "{{ env_var('DWH_DB_PORT') | int }}"
+      user: "{{ env_var('DWH_DB_USER') }}"
+      password: "{{ env_var('DWH_DB_PASSWORD') }}"
+      dbname: "{{ env_var('DWH_DB_NAME') }}"
+      schema: intermediate
+      threads: 4

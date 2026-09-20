@@ -220,6 +220,7 @@ __marimo__/
 data/raw/yoochoose/
 data/replay/yoochoose
 state/file_based
+data/raw/olist
 
 data
 # Local runtime dependencies
@@ -228,3 +229,24 @@ data
 # Local runtime state
 logs/
 state/
+
+*.pbix
+
+
+# IDE local settings
+.vscode/
+
+# dbt local/generated
+dbt/profiles.yml
+dbt/.user.yml
+dbt/logs/
+dbt/target/
+
+# Jupyter development artifacts
+notebooks/
+
+# Local runtime state
+state/
+
+# Power BI
+*.pbix

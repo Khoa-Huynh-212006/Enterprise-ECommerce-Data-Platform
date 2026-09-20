@@ -1,0 +1,43 @@
+version: 2
+
+models:
+  - name: int_clickstream_sessions
+    description: "Clickstream session aggregation. Grain: một dòng cho mỗi session_id."
+
+    columns:
+      - name: session_id
+        data_tests:
+          - not_null
+          - unique
+
+      - name: session_start_at
+        data_tests:
+          - not_null
+
+      - name: session_end_at
+        data_tests:
+          - not_null
+
+      - name: session_start_date
+        data_tests:
+          - not_null
+
+      - name: session_end_date
+        data_tests:
+          - not_null
+
+      - name: event_count
+        data_tests:
+          - not_null
+
+      - name: distinct_item_count
+        data_tests:
+          - not_null
+
+      - name: distinct_category_count
+        data_tests:
+          - not_null
+
+      - name: session_duration_seconds
+        data_tests:
+          - not_null

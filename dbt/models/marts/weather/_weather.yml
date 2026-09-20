@@ -1,0 +1,117 @@
+version: 2
+
+models:
+  - name: fact_weather_historical_forecast_hourly
+    description: "Historical forecast weather fact. Grain: một warehouse và một weather hour."
+
+    columns:
+      - name: warehouse_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_warehouses')
+                field: warehouse_id
+
+      - name: weather_time
+        data_tests:
+          - not_null
+
+      - name: weather_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: weather_hour
+        data_tests:
+          - not_null
+
+      - name: temperature_2m
+        data_tests:
+          - not_null
+
+      - name: relative_humidity_2m
+        data_tests:
+          - not_null
+
+      - name: precipitation
+        data_tests:
+          - not_null
+
+      - name: wind_speed_10m
+        data_tests:
+          - not_null
+
+      - name: weather_code
+        data_tests:
+          - not_null
+  - name: fact_weather_forecast_hourly
+    description: "Weather forecast fact. Grain: một warehouse, một ingestion snapshot và một forecast hour."
+
+    columns:
+      - name: warehouse_id
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_warehouses')
+                field: warehouse_id
+
+      - name: ingestion_id
+        data_tests:
+          - not_null
+
+      - name: snapshot_at
+        data_tests:
+          - not_null
+
+      - name: forecast_time
+        data_tests:
+          - not_null
+
+      - name: snapshot_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: forecast_date_key
+        data_tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+
+      - name: forecast_hour
+        data_tests:
+          - not_null
+
+      - name: forecast_horizon_hours
+        data_tests:
+          - not_null
+
+      - name: temperature_2m
+        data_tests:
+          - not_null
+
+      - name: relative_humidity_2m
+        data_tests:
+          - not_null
+
+      - name: precipitation
+        data_tests:
+          - not_null
+
+      - name: wind_speed_10m
+        data_tests:
+          - not_null
+
+      - name: weather_code
+        data_tests:
+          - not_null

@@ -1,0 +1,93 @@
+version: 2
+
+sources:
+  - name: staging_operational
+    database: fastorder_dwh
+    schema: staging
+    description: "Operational Silver data được Spark load từ Delta Lake vào PostgreSQL DWH."
+
+    tables:
+      - name: orders
+        columns:
+          - name: order_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: customers
+        columns:
+          - name: customer_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: warehouses
+        columns:
+          - name: warehouse_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: product_category_name_translation
+        columns:
+          - name: product_category_name
+            data_tests:
+              - not_null
+              - unique
+
+      - name: sellers
+        columns:
+          - name: seller_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: products
+        columns:
+          - name: product_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: geolocation
+        columns:
+          - name: geolocation_id
+            data_tests:
+              - not_null
+              - unique
+
+      - name: order_items
+        columns:
+          - name: order_id
+            data_tests:
+              - not_null
+          - name: order_item_id
+            data_tests:
+              - not_null
+
+      - name: order_payments
+        columns:
+          - name: order_id
+            data_tests:
+              - not_null
+          - name: payment_sequential
+            data_tests:
+              - not_null
+
+      - name: order_reviews
+        columns:
+          - name: review_id
+            data_tests:
+              - not_null
+          - name: order_id
+            data_tests:
+              - not_null
+
+      - name: inventory
+        columns:
+          - name: warehouse_id
+            data_tests:
+              - not_null
+          - name: product_id
+            data_tests:
+              - not_null
